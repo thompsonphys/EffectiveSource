@@ -1,3 +1,5 @@
 test/*.o
 test/kerr-circular
 test/kerr-equatorial
+*.dat
+.vscode
