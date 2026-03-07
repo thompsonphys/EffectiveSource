@@ -35,7 +35,7 @@ kerr-equatorial-dttcoeffs.o : ../kerr-equatorial-dttcoeffs.c
 kerr-circular.o : ../kerr-circular.c
 	$(GCC) $(CFLAGS) -O3 -c -o kerr-circular.o ../kerr-circular.c
 
-.PHONY : clean
+.PHONY : clean all
 clean :
 	-rm -rf kerr-equatorial kerr-circular
 	-rm -rf *.o *.dSYM
