@@ -3,3 +3,6 @@ test/kerr-circular
 test/kerr-equatorial
 *.dat
 .vscode
+__pycache__
+*.cpython*
+*.egg-info

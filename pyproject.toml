@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools>=64", "swig", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "effsource"
+version = "0.1.0"
+description = "Effective source for a scalar particle in Kerr spacetime"
+
+[tool.setuptools]
+py-modules = ["effsource_circular", "effsource_equatorial"]
