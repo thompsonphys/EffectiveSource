@@ -7,3 +7,5 @@ __pycache__
 *.cpython*
 *.egg-info
 *_wrap.c
+effsource_circular.py
+effsource_equatorial.py
