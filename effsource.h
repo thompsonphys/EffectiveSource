@@ -12,8 +12,6 @@ struct coordinate {
   double t;
 };
 
-double xFunc(double a, double p, double e);
-
 void effsource_init(double M, double a);
 void effsource_set_particle(struct coordinate * x_p, double E, double L, double ur_p);
 
