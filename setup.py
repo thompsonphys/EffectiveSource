@@ -7,7 +7,7 @@ effsource_circular = Extension(
     '_effsource_circular',
     sources=[
         'effsource_circular.i',
-        'kerr-circular.c',
+        'kerr-circular-ctx.c',
     ],
     include_dirs=[prefix + '/include', '.'],
     library_dirs=[prefix + "/lib"],
