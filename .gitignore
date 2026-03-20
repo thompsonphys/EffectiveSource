@@ -6,3 +6,4 @@ test/kerr-equatorial
 __pycache__
 *.cpython*
 *.egg-info
+*_wrap.c

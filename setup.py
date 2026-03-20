@@ -6,7 +6,7 @@ prefix = os.environ.get("CONDA_PREFIX", "/usr")
 effsource_circular = Extension(
     '_effsource_circular',
     sources=[
-        'effsource_circular_wrap.c',
+        'effsource_circular.i',
         'kerr-circular.c',
     ],
     include_dirs=[prefix + '/include', '.'],
@@ -19,7 +19,7 @@ effsource_circular = Extension(
 effsource_equatorial = Extension(
     '_effsource_equatorial',
     sources=[
-        'effsource_equatorial_wrap.c',
+        'effsource_equatorial.i',
         'kerr-equatorial.c',
         'kerr-equatorial-coeffs.c',
         'kerr-equatorial-dtcoeffs.c',
