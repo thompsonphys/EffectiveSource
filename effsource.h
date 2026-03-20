@@ -2,6 +2,9 @@
  * Copyright (C) 2011 Barry Wardell
  ******************************************************************************/
 
+#ifndef EFFSOURCE_H
+#define EFFSOURCE_H
+
 struct coordinate {
   double r;
   double theta;
@@ -49,3 +52,5 @@ void effsource_ctx_calc(struct effsource_ctx * ctx, struct coordinate * x,
 void effsource_ctx_PhiS_m(struct effsource_ctx * ctx, int m, struct coordinate * x, double * PhiS);
 void effsource_ctx_calc_m(struct effsource_ctx * ctx, int m, struct coordinate * x,
   double * PhiS, double * dPhiS_dx, double * d2PhiS_dx2, double * src);
+
+#endif
