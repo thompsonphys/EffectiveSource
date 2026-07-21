@@ -74,4 +74,42 @@ void effsource_equatorial_ctx_PhiS_m(struct effsource_equatorial_ctx * ctx, int 
 void effsource_equatorial_ctx_calc_m(struct effsource_equatorial_ctx * ctx, int m, struct coordinate * x,
   double * PhiS, double * dPhiS_dx, double * d2PhiS_dx2, double * src);
 
+/* Offset-based entry points: take the field-point offsets from the particle
+   (dr = r - r_p, dtheta = theta - theta_p, dphi = phi - phi_p) directly,
+   avoiding the near-particle cancellation of subtracting absolute
+   coordinates. */
+void effsource_equatorial_ctx_PhiS_offset(struct effsource_equatorial_ctx * ctx,
+  double dr, double dtheta, double dphi, double * PhiS);
+void effsource_equatorial_ctx_calc_offset(struct effsource_equatorial_ctx * ctx,
+  double dr, double dtheta, double dphi,
+  double * PhiS, double * dPhiS_dx, double * d2PhiS_dx2, double * src);
+void effsource_equatorial_ctx_PhiS_m_offset(struct effsource_equatorial_ctx * ctx,
+  int m, double dr, double dtheta, double * PhiS);
+void effsource_equatorial_ctx_calc_m_offset(struct effsource_equatorial_ctx * ctx,
+  int m, double dr, double dtheta,
+  double * PhiS, double * dPhiS_dx, double * d2PhiS_dx2, double * src);
+
+/* Kernel split of the m-mode singular field:
+   PhiS_m = G0 + GL*ln(alpha), alpha = alpha20*dr^2 + alpha02*dtheta^2,
+   G0 and GL analytic across the particle.
+   out[4] = {Re G0, Im G0, Re GL, Im GL}. */
+void effsource_equatorial_ctx_PhiS_m_split(struct effsource_equatorial_ctx * ctx,
+  int m, double dr, double dtheta, double * out);
+
+/* Kernel quadratic-form coefficients: out[4] = {alpha20, alpha02, beta, c} */
+void effsource_equatorial_ctx_get_alpha(struct effsource_equatorial_ctx * ctx,
+  double * out);
+
+/* Kernel split of calc_m: each output component returned as seven channels
+   {A, L, P1, P2, P3, P4, P5} with
+   value = A + L*ln(alpha) + P1/alpha + P2/alpha^2 + ... + P5/alpha^5 and all
+   channels analytic across the particle (P-side hidden poles extracted in
+   closed form; field reaches 1/alpha^3, 1st derivs 1/alpha^4, 2nd/src 1/alpha^5).
+     PhiS_s[14], dPhiS_s[56], d2PhiS_s[140], src_s[14]
+   (channel-major blocks, component layout of calc_m within each block;
+   mixed second derivatives that calc_m leaves NAN are stored as 0). */
+void effsource_equatorial_ctx_calc_m_split(struct effsource_equatorial_ctx * ctx,
+  int m, double dr, double dtheta,
+  double * PhiS_s, double * dPhiS_s, double * d2PhiS_s, double * src_s);
+
 #endif /* EFFSOURCE_EQUATORIAL_H */

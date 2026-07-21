@@ -88,6 +88,32 @@ void effsource_equatorial_ctx_PhiS_m(struct effsource_equatorial_ctx * ctx, int 
 void effsource_equatorial_ctx_calc_m(struct effsource_equatorial_ctx * ctx, int m, struct coordinate *x,
     double *PhiS, double *dPhiS_dx, double *d2PhiS_dx2, double *src);
 
+/* Offset-based entry points (avoid near-particle coordinate cancellation) */
+void effsource_equatorial_ctx_PhiS_offset(struct effsource_equatorial_ctx * ctx,
+    double dr, double dtheta, double dphi, double *PhiS);
+void effsource_equatorial_ctx_calc_offset(struct effsource_equatorial_ctx * ctx,
+    double dr, double dtheta, double dphi,
+    double *PhiS, double *dPhiS_dx, double *d2PhiS_dx2, double *src);
+void effsource_equatorial_ctx_PhiS_m_offset(struct effsource_equatorial_ctx * ctx,
+    int m, double dr, double dtheta, double *PhiS);
+void effsource_equatorial_ctx_calc_m_offset(struct effsource_equatorial_ctx * ctx,
+    int m, double dr, double dtheta,
+    double *PhiS, double *dPhiS_dx, double *d2PhiS_dx2, double *src);
+
+/* Kernel split: PhiS_m = G0 + GL*ln(alpha), out = {ReG0, ImG0, ReGL, ImGL} */
+void effsource_equatorial_ctx_PhiS_m_split(struct effsource_equatorial_ctx * ctx,
+    int m, double dr, double dtheta, double *out);
+
+/* Kernel quadratic-form coefficients: out = {alpha20, alpha02, beta, c} */
+void effsource_equatorial_ctx_get_alpha(struct effsource_equatorial_ctx * ctx,
+    double *out);
+
+/* Kernel split of calc_m: 4 channels {A, L, P1, P2} per component,
+   value = A + L*ln(alpha) + P1/alpha + P2/alpha^2 */
+void effsource_equatorial_ctx_calc_m_split(struct effsource_equatorial_ctx * ctx,
+    int m, double dr, double dtheta,
+    double *PhiS_s, double *dPhiS_s, double *d2PhiS_s, double *src_s);
+
 /* Utility to disable GSL error handler (prevents aborts on roundoff errors) */
 %inline %{
 void disable_gsl_error_handler(void) {
@@ -169,6 +195,102 @@ class EffsourceEquatorialContext:
         _d2PhiS = doubleArray(20)
         _src = doubleArray(2)
         effsource_equatorial_ctx_calc_m(self._ctx, m, x, _PhiS.cast(), _dPhiS.cast(), _d2PhiS.cast(), _src.cast())
+        return (
+            [_PhiS[i] for i in range(2)],
+            [_dPhiS[i] for i in range(8)],
+            [_d2PhiS[i] for i in range(20)],
+            [_src[i] for i in range(2)],
+        )
+
+    def calc_PhiS_offset(self, dr, dtheta, dphi=0.0):
+        """Singular field at an offset (dr, dtheta, dphi) from the particle."""
+        buf = doubleArray(1)
+        effsource_equatorial_ctx_PhiS_offset(self._ctx, dr, dtheta, dphi, buf.cast())
+        return buf[0]
+
+    def calc_PhiS_m_offset(self, m, dr, dtheta):
+        """m-mode singular field at an offset (dr, dtheta) from the particle.
+
+        Returns: (Re, Im) tuple
+        """
+        buf = doubleArray(2)
+        effsource_equatorial_ctx_PhiS_m_offset(self._ctx, m, dr, dtheta, buf.cast())
+        return buf[0], buf[1]
+
+    def calc_offset(self, dr, dtheta, dphi=0.0):
+        """Effective source at an offset (dr, dtheta, dphi) from the particle.
+
+        Returns: (PhiS, dPhiS_dx, d2PhiS_dx2, src)
+        """
+        _PhiS = doubleArray(1)
+        _dPhiS = doubleArray(4)
+        _d2PhiS = doubleArray(10)
+        _src = doubleArray(1)
+        effsource_equatorial_ctx_calc_offset(self._ctx, dr, dtheta, dphi,
+                                             _PhiS.cast(), _dPhiS.cast(), _d2PhiS.cast(), _src.cast())
+        return (
+            _PhiS[0],
+            [_dPhiS[i] for i in range(4)],
+            [_d2PhiS[i] for i in range(10)],
+            _src[0],
+        )
+
+    def calc_PhiS_m_split(self, m, dr, dtheta):
+        """Kernel split of the m-mode singular field at an offset:
+        PhiS_m = G0 + GL*ln(alpha), alpha = alpha20*dr^2 + alpha02*dtheta^2,
+        with G0, GL analytic across the particle.
+
+        Returns: ((ReG0, ImG0), (ReGL, ImGL))
+        """
+        buf = doubleArray(4)
+        effsource_equatorial_ctx_PhiS_m_split(self._ctx, m, dr, dtheta, buf.cast())
+        return (buf[0], buf[1]), (buf[2], buf[3])
+
+    def get_alpha(self):
+        """Kernel quadratic-form coefficients for the current particle.
+
+        Returns: (alpha20, alpha02, beta, c)
+        """
+        buf = doubleArray(4)
+        effsource_equatorial_ctx_get_alpha(self._ctx, buf.cast())
+        return buf[0], buf[1], buf[2], buf[3]
+
+    def calc_m_split(self, m, dr, dtheta):
+        """Kernel split of calc_m at an offset (dr, dtheta): every component
+        of (PhiS, dPhiS, d2PhiS, src) as seven channels {A, L, P1, P2, P3, P4,
+        P5} with value = A + L*ln(alpha) + P1/alpha + ... + P5/alpha^5 and all
+        channels analytic across the particle (the P-side hidden poles are
+        extracted in closed form; field 1/alpha^3, 1st derivs 1/alpha^4, 2nd
+        derivs / src 1/alpha^5).
+
+        Returns: (PhiS_s, dPhiS_s, d2PhiS_s, src_s) where each entry is a
+        list of 7 channel blocks with calc_m_offset's component layout
+        (mixed second derivatives that calc_m leaves NAN are 0 here).
+        """
+        _PhiS = doubleArray(14)
+        _dPhiS = doubleArray(56)
+        _d2PhiS = doubleArray(140)
+        _src = doubleArray(14)
+        effsource_equatorial_ctx_calc_m_split(self._ctx, m, dr, dtheta,
+                                              _PhiS.cast(), _dPhiS.cast(), _d2PhiS.cast(), _src.cast())
+        return (
+            [[_PhiS[2 * ch + i] for i in range(2)] for ch in range(7)],
+            [[_dPhiS[8 * ch + i] for i in range(8)] for ch in range(7)],
+            [[_d2PhiS[20 * ch + i] for i in range(20)] for ch in range(7)],
+            [[_src[2 * ch + i] for i in range(2)] for ch in range(7)],
+        )
+
+    def calc_m_offset(self, m, dr, dtheta):
+        """m-mode effective source at an offset (dr, dtheta) from the particle.
+
+        Returns: (PhiS, dPhiS, d2PhiS, src)
+        """
+        _PhiS = doubleArray(2)
+        _dPhiS = doubleArray(8)
+        _d2PhiS = doubleArray(20)
+        _src = doubleArray(2)
+        effsource_equatorial_ctx_calc_m_offset(self._ctx, m, dr, dtheta,
+                                               _PhiS.cast(), _dPhiS.cast(), _d2PhiS.cast(), _src.cast())
         return (
             [_PhiS[i] for i in range(2)],
             [_dPhiS[i] for i in range(8)],

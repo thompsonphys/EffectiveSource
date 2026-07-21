@@ -1,4 +1,5 @@
 test/*.o
+*.csv
 test/kerr-circular
 test/kerr-equatorial
 *.dat
@@ -9,3 +10,4 @@ __pycache__
 *_wrap.c
 effsource_circular.py
 effsource_equatorial.py
+build
