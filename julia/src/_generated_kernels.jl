@@ -651,8 +651,7 @@ function _phis_m(ctx::EffsourceCtx{T}, m::Integer, x::Coordinate{T}, cm::Val) wh
         C[24] = C[12]*C[12]
         C[25] = C[13]*C[12]
         C[26] = C[13]*C[13]
-        ellE = _ellE(sqrt(T(1.0)/(T(1.0)+C1)))
-        ellK = _ellK(sqrt(T(1.0)/(T(1.0)+C1)))
+        (ellK, ellE) = _ellKE_arg(C1)
         ellip = _ovec0(T[ellK, ellE])
         if m>20
             error("effsource: requested m-mode is not supported (m>20)")
@@ -785,8 +784,7 @@ function _phis_m(ctx::EffsourceCtx{T}, m::Integer, off::Offset{T}, cm::Val) wher
         C[24] = C[12]*C[12]
         C[25] = C[13]*C[12]
         C[26] = C[13]*C[13]
-        ellE = _ellE(sqrt(T(1.0)/(T(1.0)+C1)))
-        ellK = _ellK(sqrt(T(1.0)/(T(1.0)+C1)))
+        (ellK, ellE) = _ellKE_arg(C1)
         ellip = _ovec0(T[ellK, ellE])
         if m>20
             error("effsource: requested m-mode is not supported (m>20)")
@@ -1075,8 +1073,7 @@ function _calc_m(ctx::EffsourceCtx{T}, m::Integer, x::Coordinate{T}, cm::Val) wh
         d2C_dtheta2[24] = 24*23*C[22]*dC1_dtheta*dC1_dtheta + 24*C[23]*d2C1_dtheta2
         d2C_dtheta2[25] = 25*24*C[23]*dC1_dtheta*dC1_dtheta + 25*C[24]*d2C1_dtheta2
         d2C_dtheta2[26] = 26*25*C[24]*dC1_dtheta*dC1_dtheta + 26*C[25]*d2C1_dtheta2
-        ellE = _ellE(sqrt(T(1.0)/(T(1.0)+C1)))
-        ellK = _ellK(sqrt(T(1.0)/(T(1.0)+C1)))
+        (ellK, ellE) = _ellKE_arg(C1)
         ellip = _ovec0(T[ellK, ellE])
         dellE_dC = (ellK - ellE)/(T(2.0)*(1+C1))
         dellK_dC = (C1*ellK - (1+C1)*ellE)/(T(2.0)*C1*(1+C1))
@@ -1531,8 +1528,7 @@ function _calc_m(ctx::EffsourceCtx{T}, m::Integer, off::Offset{T}, cm::Val) wher
         d2C_dtheta2[24] = 24*23*C[22]*dC1_dtheta*dC1_dtheta + 24*C[23]*d2C1_dtheta2
         d2C_dtheta2[25] = 25*24*C[23]*dC1_dtheta*dC1_dtheta + 25*C[24]*d2C1_dtheta2
         d2C_dtheta2[26] = 26*25*C[24]*dC1_dtheta*dC1_dtheta + 26*C[25]*d2C1_dtheta2
-        ellE = _ellE(sqrt(T(1.0)/(T(1.0)+C1)))
-        ellK = _ellK(sqrt(T(1.0)/(T(1.0)+C1)))
+        (ellK, ellE) = _ellKE_arg(C1)
         ellip = _ovec0(T[ellK, ellE])
         dellE_dC = (ellK - ellE)/(T(2.0)*(1+C1))
         dellK_dC = (C1*ellK - (1+C1)*ellE)/(T(2.0)*C1*(1+C1))

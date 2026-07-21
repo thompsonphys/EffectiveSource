@@ -98,6 +98,41 @@ end
 @inline _ellK(k::Real) = _agm_KE(k)[1]
 @inline _ellE(k::Real) = _agm_KE(k)[2]
 
+# Complement-fed variant: K, E of the modulus k with k^2 = 1 - mp, taking the
+# complementary parameter mp = 1 - k^2 directly. Near the particle the kernels
+# have mp = C1/(1+C1) -> 0 and k -> 1; forming k first rounds away the
+# complement (1 - k^2 is only known to ~eps/mp relative), which contaminates
+# K, E. Feeding mp keeps b_0 = sqrt(mp) and c_0^2 = 1 - mp fully accurate.
+@inline function _agm_KE_c(mp::T) where {T<:Real}
+    a = one(T)
+    b = sqrt(mp)
+    S = (one(T) - mp)/2         # c_0^2/2 without ever forming k
+    w = one(T)
+    tol = eps(float(real(one(T))))
+    for _ in 1:200
+        a, b, c = (a + b)/2, sqrt(a*b), (a - b)/2
+        S += w*c*c
+        w += w
+        abs(c) <= tol*abs(a) && break
+    end
+    K = T(pi)/(2a)
+    return K, K*(one(T) - S)
+end
+
+# Experiment switch: when true, the m-mode kernels evaluate the elliptic
+# integrals from the complementary parameter (cured path); when false they
+# reproduce the original k = sqrt(1/(1+C1)) path bit-for-bit.
+const ELL_FROM_COMPLEMENT = Ref(false)
+
+@inline function _ellKE_arg(C1::T) where {T<:Real}
+    if ELL_FROM_COMPLEMENT[]
+        return _agm_KE_c(C1/(one(T) + C1))
+    else
+        k = sqrt(one(T)/(one(T) + C1))
+        return _agm_KE(k)
+    end
+end
+
 # --- generated code --------------------------------------------------------
 
 include("reei_data.jl")        # REEI_FLAT + reei(T, m,i,j,k)
