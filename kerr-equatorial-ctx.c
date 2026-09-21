@@ -1613,7 +1613,8 @@ static long double _Complex effsource_box_m_channel(long double a, long double r
    See docs/nmode-kernel-factorization.md (Stage 2, sec 6). */
 static void effsource_equatorial_ctx_calc_m_split_core(struct effsource_equatorial_ctx *ctx,
     int m, double r, double theta, double dr, double dtheta,
-    double *PhiS_s, double *dPhiS_s, double *d2PhiS_s, double *src_s)
+    long double *PhiS_s, long double *dPhiS_s, long double *d2PhiS_s,
+    long double *src_s)
 {
   const long double M = ctx->M, a = ctx->a;
   const struct coordinate xp = ctx->xp;
@@ -2483,45 +2484,101 @@ static void effsource_equatorial_ctx_calc_m_split_core(struct effsource_equatori
 
   for (int ch = 0; ch < 7; ch++)
   {
-    PhiS_s[2 * ch] = (double)creall(vCh[ch]);
-    PhiS_s[2 * ch + 1] = (double)cimagl(vCh[ch]);
+    PhiS_s[2 * ch] = creall(vCh[ch]);
+    PhiS_s[2 * ch + 1] = cimagl(vCh[ch]);
 
-    double *dP = dPhiS_s + 8 * ch;
-    dP[0] = (double)creall(tCh[ch]);
-    dP[1] = (double)cimagl(tCh[ch]);
-    dP[2] = (double)creall(rCh[ch]);
-    dP[3] = (double)cimagl(rCh[ch]);
-    dP[4] = (double)creall(thCh[ch]);
-    dP[5] = (double)cimagl(thCh[ch]);
-    dP[6] = (double)creall(im * vCh[ch]);
-    dP[7] = (double)cimagl(im * vCh[ch]);
+    long double *dP = dPhiS_s + 8 * ch;
+    dP[0] = creall(tCh[ch]);
+    dP[1] = cimagl(tCh[ch]);
+    dP[2] = creall(rCh[ch]);
+    dP[3] = cimagl(rCh[ch]);
+    dP[4] = creall(thCh[ch]);
+    dP[5] = cimagl(thCh[ch]);
+    dP[6] = creall(im * vCh[ch]);
+    dP[7] = cimagl(im * vCh[ch]);
 
-    double *d2P = d2PhiS_s + 20 * ch;
+    long double *d2P = d2PhiS_s + 20 * ch;
     for (int q = 0; q < 20; q++)
-      d2P[q] = 0.0;
-    d2P[0] = (double)creall(ttCh[ch]);
-    d2P[1] = (double)cimagl(ttCh[ch]);
-    d2P[6] = (double)creall(im * tCh[ch]);
-    d2P[7] = (double)cimagl(im * tCh[ch]);
-    d2P[8] = (double)creall(rrCh[ch]);
-    d2P[9] = (double)cimagl(rrCh[ch]);
-    d2P[14] = (double)creall(ththCh[ch]);
-    d2P[15] = (double)cimagl(ththCh[ch]);
-    d2P[18] = (double)creall(-mm * vCh[ch]);
-    d2P[19] = (double)cimagl(-mm * vCh[ch]);
+      d2P[q] = 0.0L;
+    d2P[0] = creall(ttCh[ch]);
+    d2P[1] = cimagl(ttCh[ch]);
+    d2P[6] = creall(im * tCh[ch]);
+    d2P[7] = cimagl(im * tCh[ch]);
+    d2P[8] = creall(rrCh[ch]);
+    d2P[9] = cimagl(rrCh[ch]);
+    d2P[14] = creall(ththCh[ch]);
+    d2P[15] = cimagl(ththCh[ch]);
+    d2P[18] = creall(-mm * vCh[ch]);
+    d2P[19] = cimagl(-mm * vCh[ch]);
 
-    src_s[2 * ch] = (double)creall(boxCh[ch]);
-    src_s[2 * ch + 1] = (double)cimagl(boxCh[ch]);
+    src_s[2 * ch] = creall(boxCh[ch]);
+    src_s[2 * ch + 1] = cimagl(boxCh[ch]);
   }
+}
+
+/* Reassemble one split component in long double:
+     X = A + L ln(alpha) + P1/alpha + P2/alpha^2 + ... + P5/alpha^5,
+   channel index q holding the 1/alpha^(q-1) term. The dominant P1/P2 pair is
+   fused into (P1 alpha + P2)/alpha^2 so their mutual cancellation costs one
+   extended-precision subtraction rather than two rounded quotients. */
+static double effsource_gold_assemble(const long double *ch, int stride, int c,
+    long double alpha, long double lnAlpha)
+{
+  const long double a2 = alpha * alpha;
+  long double v = ch[c] + ch[stride + c] * lnAlpha
+                + (ch[2 * stride + c] * alpha + ch[3 * stride + c]) / a2;
+  long double ap = a2 * alpha;
+  for (int q = 4; q < 7; q++)
+  {
+    v += ch[q * stride + c] / ap;
+    ap *= alpha;
+  }
+  return (double)v;
+}
+
+void effsource_equatorial_ctx_calc_m_gold(struct effsource_equatorial_ctx *ctx,
+    int m, double dr, double dtheta,
+    double *PhiS, double *dPhiS, double *src)
+{
+  long double p_l[14], dp_l[56], d2p_l[140], s_l[14];
+  effsource_equatorial_ctx_calc_m_split_l(ctx, m, dr, dtheta,
+      p_l, dp_l, d2p_l, s_l);
+
+  const long double drl = (long double)dr, dthl = (long double)dtheta;
+  const long double alpha = (long double)ctx->alpha20 * drl * drl
+                          + (long double)ctx->alpha02 * dthl * dthl;
+  const long double lnAlpha = logl(alpha);
+
+  for (int c = 0; c < 2; c++)
+  {
+    PhiS[c] = effsource_gold_assemble(p_l, 2, c, alpha, lnAlpha);
+    src[c]  = effsource_gold_assemble(s_l, 2, c, alpha, lnAlpha);
+  }
+  for (int c = 0; c < 8; c++)
+    dPhiS[c] = effsource_gold_assemble(dp_l, 8, c, alpha, lnAlpha);
+}
+
+void effsource_equatorial_ctx_calc_m_split_l(struct effsource_equatorial_ctx *ctx,
+    int m, double dr, double dtheta,
+    long double *PhiS_s, long double *dPhiS_s, long double *d2PhiS_s,
+    long double *src_s)
+{
+  const struct coordinate xp = ctx->xp;
+  effsource_equatorial_ctx_calc_m_split_core(ctx, m, xp.r + dr, xp.theta + dtheta,
+      dr, dtheta, PhiS_s, dPhiS_s, d2PhiS_s, src_s);
 }
 
 void effsource_equatorial_ctx_calc_m_split(struct effsource_equatorial_ctx *ctx,
     int m, double dr, double dtheta,
     double *PhiS_s, double *dPhiS_s, double *d2PhiS_s, double *src_s)
 {
-  const struct coordinate xp = ctx->xp;
-  effsource_equatorial_ctx_calc_m_split_core(ctx, m, xp.r + dr, xp.theta + dtheta,
-      dr, dtheta, PhiS_s, dPhiS_s, d2PhiS_s, src_s);
+  long double p_l[14], dp_l[56], d2p_l[140], s_l[14];
+  effsource_equatorial_ctx_calc_m_split_l(ctx, m, dr, dtheta,
+      p_l, dp_l, d2p_l, s_l);
+  for (int k = 0; k < 14; k++)  { PhiS_s[k] = (double)p_l[k];
+                                  src_s[k]  = (double)s_l[k]; }
+  for (int k = 0; k < 56; k++)  dPhiS_s[k]  = (double)dp_l[k];
+  for (int k = 0; k < 140; k++) d2PhiS_s[k] = (double)d2p_l[k];
 }
 
 

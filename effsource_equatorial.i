@@ -108,6 +108,11 @@ void effsource_equatorial_ctx_PhiS_m_split(struct effsource_equatorial_ctx * ctx
 void effsource_equatorial_ctx_get_alpha(struct effsource_equatorial_ctx * ctx,
     double *out);
 
+/* Long-double reference reassembly of the split channels */
+void effsource_equatorial_ctx_calc_m_gold(struct effsource_equatorial_ctx * ctx,
+  int m, double dr, double dtheta,
+  double * PhiS, double * dPhiS, double * src);
+
 /* Kernel split of calc_m: 4 channels {A, L, P1, P2} per component,
    value = A + L*ln(alpha) + P1/alpha + P2/alpha^2 */
 void effsource_equatorial_ctx_calc_m_split(struct effsource_equatorial_ctx * ctx,
@@ -254,6 +259,23 @@ class EffsourceEquatorialContext:
         buf = doubleArray(4)
         effsource_equatorial_ctx_get_alpha(self._ctx, buf.cast())
         return buf[0], buf[1], buf[2], buf[3]
+
+    def calc_m_gold(self, m, dr, dtheta):
+        """Long-double reference reassembly of the split channels at (dr, dtheta).
+
+        Returns (PhiS[2], dPhiS[8], src[2]). Grades the double calc_m paths;
+        d2PhiS is not produced (calc_m leaves the mixed entries NAN).
+        """
+        _PhiS = doubleArray(2)
+        _dPhiS = doubleArray(8)
+        _src = doubleArray(2)
+        effsource_equatorial_ctx_calc_m_gold(self._ctx, m, dr, dtheta,
+                                            _PhiS.cast(), _dPhiS.cast(), _src.cast())
+        return (
+            [_PhiS[i] for i in range(2)],
+            [_dPhiS[i] for i in range(8)],
+            [_src[i] for i in range(2)],
+        )
 
     def calc_m_split(self, m, dr, dtheta):
         """Kernel split of calc_m at an offset (dr, dtheta): every component

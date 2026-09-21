@@ -112,4 +112,22 @@ void effsource_equatorial_ctx_calc_m_split(struct effsource_equatorial_ctx * ctx
   int m, double dr, double dtheta,
   double * PhiS_s, double * dPhiS_s, double * d2PhiS_s, double * src_s);
 
+/* Reference evaluator: the seven split channels reassembled in long double with
+   the dominant P1/P2 pair fused. Same outputs as calc_m_offset minus d2PhiS,
+   which calc_m leaves partly NAN. Slower; for grading the double path. */
+void effsource_equatorial_ctx_calc_m_gold(struct effsource_equatorial_ctx * ctx,
+  int m, double dr, double dtheta,
+  double * PhiS, double * dPhiS, double * src);
+
+/* As calc_m_split but returning the channels without narrowing to double. The
+   core already works in long double; the double entry point above rounds on
+   output, which costs the caller ~11 bits it needs back when reassembling. The
+   channels cancel against each other (src reaches 1/alpha^5, so its
+   conditioning grows without bound as alpha -> 0), and that cancellation is
+   paid by the caller, not here. */
+void effsource_equatorial_ctx_calc_m_split_l(struct effsource_equatorial_ctx * ctx,
+  int m, double dr, double dtheta,
+  long double * PhiS_s, long double * dPhiS_s, long double * d2PhiS_s,
+  long double * src_s);
+
 #endif /* EFFSOURCE_EQUATORIAL_H */

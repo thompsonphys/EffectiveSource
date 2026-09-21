@@ -8,4 +8,5 @@ version = "0.1.0"
 description = "Effective source for a scalar particle in Kerr spacetime"
 
 [tool.setuptools]
-py-modules = ["effsource_circular", "effsource_equatorial"]
+py-modules = ["effsource_circular", "effsource_equatorial", "effsource_legacy",
+              "effsource_legacy_elliptic"]
