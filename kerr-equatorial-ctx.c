@@ -2521,7 +2521,7 @@ static void effsource_equatorial_ctx_calc_m_split_core(struct effsource_equatori
    channel index q holding the 1/alpha^(q-1) term. The dominant P1/P2 pair is
    fused into (P1 alpha + P2)/alpha^2 so their mutual cancellation costs one
    extended-precision subtraction rather than two rounded quotients. */
-static double effsource_gold_assemble(const long double *ch, int stride, int c,
+static double effsource_extended_assemble(const long double *ch, int stride, int c,
     long double alpha, long double lnAlpha)
 {
   const long double a2 = alpha * alpha;
@@ -2536,7 +2536,7 @@ static double effsource_gold_assemble(const long double *ch, int stride, int c,
   return (double)v;
 }
 
-void effsource_equatorial_ctx_calc_m_gold(struct effsource_equatorial_ctx *ctx,
+void effsource_equatorial_ctx_calc_m_extended(struct effsource_equatorial_ctx *ctx,
     int m, double dr, double dtheta,
     double *PhiS, double *dPhiS, double *src)
 {
@@ -2551,11 +2551,11 @@ void effsource_equatorial_ctx_calc_m_gold(struct effsource_equatorial_ctx *ctx,
 
   for (int c = 0; c < 2; c++)
   {
-    PhiS[c] = effsource_gold_assemble(p_l, 2, c, alpha, lnAlpha);
-    src[c]  = effsource_gold_assemble(s_l, 2, c, alpha, lnAlpha);
+    PhiS[c] = effsource_extended_assemble(p_l, 2, c, alpha, lnAlpha);
+    src[c]  = effsource_extended_assemble(s_l, 2, c, alpha, lnAlpha);
   }
   for (int c = 0; c < 8; c++)
-    dPhiS[c] = effsource_gold_assemble(dp_l, 8, c, alpha, lnAlpha);
+    dPhiS[c] = effsource_extended_assemble(dp_l, 8, c, alpha, lnAlpha);
 }
 
 void effsource_equatorial_ctx_calc_m_split_l(struct effsource_equatorial_ctx *ctx,

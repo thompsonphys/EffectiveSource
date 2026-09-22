@@ -33,10 +33,10 @@ effsource_equatorial = Extension(
     extra_compile_args=['-std=gnu99', '-O0'],
 )
 
-effsource_legacy = Extension(
-    '_effsource_legacy',
+effsource_original = Extension(
+    '_effsource_original',
     sources=[
-        'effsource_legacy.i',
+        'effsource_original.i',
         'kerr-equatorial.c',
         'kerr-equatorial-coeffs.c',
         'kerr-equatorial-dtcoeffs.c',
@@ -49,11 +49,11 @@ effsource_legacy = Extension(
     extra_compile_args=['-std=gnu99', '-O0'],
 )
 
-effsource_legacy_elliptic = Extension(
-    '_effsource_legacy_elliptic',
+effsource_original_agm = Extension(
+    '_effsource_original_agm',
     sources=[
-        'effsource_legacy_elliptic.i',
-        'legacy_elliptic/kerr-equatorial.c',
+        'effsource_original_agm.i',
+        'original_agm/kerr-equatorial.c',
         'kerr-equatorial-coeffs.c',
         'kerr-equatorial-dtcoeffs.c',
         'kerr-equatorial-dttcoeffs.c',
@@ -67,5 +67,5 @@ effsource_legacy_elliptic = Extension(
 
 setup(
     ext_modules=[effsource_circular, effsource_equatorial,
-                 effsource_legacy, effsource_legacy_elliptic]
+                 effsource_original, effsource_original_agm]
 )

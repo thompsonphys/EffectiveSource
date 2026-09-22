@@ -115,7 +115,7 @@ void effsource_equatorial_ctx_calc_m_split(struct effsource_equatorial_ctx * ctx
 /* Reference evaluator: the seven split channels reassembled in long double with
    the dominant P1/P2 pair fused. Same outputs as calc_m_offset minus d2PhiS,
    which calc_m leaves partly NAN. Slower; for grading the double path. */
-void effsource_equatorial_ctx_calc_m_gold(struct effsource_equatorial_ctx * ctx,
+void effsource_equatorial_ctx_calc_m_extended(struct effsource_equatorial_ctx * ctx,
   int m, double dr, double dtheta,
   double * PhiS, double * dPhiS, double * src);
 

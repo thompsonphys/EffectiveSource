@@ -1,5 +1,5 @@
-/* Shared declarations for the legacy global-scope API. Included by
-   effsource_legacy.i and effsource_legacy_elliptic.i, which supply the
+/* Shared declarations for the original global-scope API. Included by
+   effsource_original.i and effsource_original_agm.i, which supply the
    %module line and differ only in which kerr-equatorial.c they link. */
 
 %{

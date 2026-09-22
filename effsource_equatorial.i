@@ -109,7 +109,7 @@ void effsource_equatorial_ctx_get_alpha(struct effsource_equatorial_ctx * ctx,
     double *out);
 
 /* Long-double reference reassembly of the split channels */
-void effsource_equatorial_ctx_calc_m_gold(struct effsource_equatorial_ctx * ctx,
+void effsource_equatorial_ctx_calc_m_extended(struct effsource_equatorial_ctx * ctx,
   int m, double dr, double dtheta,
   double * PhiS, double * dPhiS, double * src);
 
@@ -260,7 +260,7 @@ class EffsourceEquatorialContext:
         effsource_equatorial_ctx_get_alpha(self._ctx, buf.cast())
         return buf[0], buf[1], buf[2], buf[3]
 
-    def calc_m_gold(self, m, dr, dtheta):
+    def calc_m_extended(self, m, dr, dtheta):
         """Long-double reference reassembly of the split channels at (dr, dtheta).
 
         Returns (PhiS[2], dPhiS[8], src[2]). Grades the double calc_m paths;
@@ -269,7 +269,7 @@ class EffsourceEquatorialContext:
         _PhiS = doubleArray(2)
         _dPhiS = doubleArray(8)
         _src = doubleArray(2)
-        effsource_equatorial_ctx_calc_m_gold(self._ctx, m, dr, dtheta,
+        effsource_equatorial_ctx_calc_m_extended(self._ctx, m, dr, dtheta,
                                             _PhiS.cast(), _dPhiS.cast(), _src.cast())
         return (
             [_PhiS[i] for i in range(2)],
