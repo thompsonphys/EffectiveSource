@@ -60,6 +60,9 @@ struct effsource_equatorial_ctx {
          d2Adt29000;
   double d2alphadt220, d2alphadt202, d2betadt2, d2cdt2;
   double d2C1_dt200, d2C1_dt202, d2C1_dt210, d2C1_dt220;
+
+  /* Nonzero: m-mode elliptic integrals K, E from the complementary parameter by AGM. Default 0. */
+  int ell_from_complement;
 };
 
 struct effsource_equatorial_ctx * effsource_equatorial_create(double M, double a);

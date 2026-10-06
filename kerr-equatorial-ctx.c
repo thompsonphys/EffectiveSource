@@ -3,6 +3,7 @@
  ******************************************************************************/
 
 #include <math.h>
+#include <float.h>
 #include <assert.h>
 #include "effsource_equatorial.h"
 #include <stdio.h>
@@ -65,11 +66,45 @@ static inline int max(int a, int b)
   return a > b ? a : b;
 }
 
+static void effsource_ellKE_from_C1(double C1, double *ellK, double *ellE)
+{
+  const double mp = C1 / (1.0 + C1);
+  double a = 1.0, b = sqrt(mp);
+  double S = 0.5 * (1.0 - mp);
+  double w = 1.0;
+  for (int n = 0; n < 100; n++)
+  {
+    const double cn = 0.5 * (a - b);
+    const double an = 0.5 * (a + b);
+    b = sqrt(a * b);
+    a = an;
+    S += w * cn * cn;
+    w *= 2.0;
+    if (fabs(cn) <= DBL_EPSILON * fabs(a))
+      break;
+  }
+  *ellK = M_PI / (2.0 * a);
+  *ellE = *ellK * (1.0 - S);
+}
+
+static void effsource_ellKE(const struct effsource_equatorial_ctx *ctx, double C1, double *ellK, double *ellE)
+{
+  if (ctx->ell_from_complement)
+  {
+    effsource_ellKE_from_C1(C1, ellK, ellE);
+    return;
+  }
+  const double gam = sqrt(1.0 / (1.0 + C1));
+  *ellE = gsl_sf_ellint_Ecomp(gam, GSL_PREC_DOUBLE);
+  *ellK = gsl_sf_ellint_Kcomp(gam, GSL_PREC_DOUBLE);
+}
+
 struct effsource_equatorial_ctx * effsource_equatorial_create(double mass, double spin)
 {
   struct effsource_equatorial_ctx * ctx = malloc(sizeof(struct effsource_equatorial_ctx));
   ctx->M = mass;
   ctx->a = spin;
+  ctx->ell_from_complement = 0;
   return ctx;
 }
 
@@ -209,9 +244,8 @@ void effsource_equatorial_ctx_PhiS_m(struct effsource_equatorial_ctx *ctx, int m
   C[25] = C[13] * C[12];
   C[26] = C[13] * C[13];
 
-  double gam = sqrt(1.0 / (1.0 + C1));
-  const double ellE = gsl_sf_ellint_Ecomp(gam, GSL_PREC_DOUBLE);
-  const double ellK = gsl_sf_ellint_Kcomp(gam, GSL_PREC_DOUBLE);
+  double ellK, ellE;
+  effsource_ellKE(ctx, C1, &ellK, &ellE);
   const double ellip[2] = {ellK, ellE};
 
   if (m > 20)
@@ -867,9 +901,8 @@ void effsource_equatorial_ctx_calc_m(struct effsource_equatorial_ctx *ctx, int m
   d2C_dt2[26] = 26 * 25 * C[24] * dC1_dt * dC1_dt + 26 * C[25] * d2C1_dt2;
 
   /* Elliptic integrals */
-  double gam = sqrt(1.0 / (1.0 + C1));
-  double ellE = gsl_sf_ellint_Ecomp(gam, GSL_PREC_DOUBLE);
-  double ellK = gsl_sf_ellint_Kcomp(gam, GSL_PREC_DOUBLE);
+  double ellK, ellE;
+  effsource_ellKE(ctx, C1, &ellK, &ellE);
   const double ellip[2] = {ellK, ellE};
 
   /* Derivatives of elliptic integrals */

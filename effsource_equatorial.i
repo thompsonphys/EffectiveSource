@@ -63,6 +63,7 @@ struct effsource_equatorial_ctx {
            d2Adt29000;
     double d2alphadt220, d2alphadt202, d2betadt2, d2cdt2;
     double d2C1_dt200, d2C1_dt202, d2C1_dt210, d2C1_dt220;
+    int ell_from_complement;
 };
 
 // /* Simple functions - wrap directly (global API) */
@@ -113,13 +114,23 @@ class EffsourceEquatorialContext:
     so multiple instances can be used in parallel without interference.
     """
 
-    def __init__(self, M, a):
+    def __init__(self, M, a, ell_from_complement=False):
         self._ctx = effsource_equatorial_create(M, a)
+        self._ctx.ell_from_complement = int(ell_from_complement)
 
     def __del__(self):
         if hasattr(self, '_ctx') and self._ctx is not None:
             effsource_equatorial_free(self._ctx)
             self._ctx = None
+
+    @property
+    def ell_from_complement(self):
+        """True when the m-mode elliptic integrals use the complementary-parameter AGM."""
+        return bool(self._ctx.ell_from_complement)
+
+    @ell_from_complement.setter
+    def ell_from_complement(self, on):
+        self._ctx.ell_from_complement = int(on)
 
     def set_particle(self, x_p, E, L, ur):
         effsource_equatorial_ctx_set_particle(self._ctx, x_p, E, L, ur)
