@@ -24,8 +24,6 @@ using Printf
 
 const M, a = 1, 5e-1
 const rp, thp, php = 10.0, π/2, π/3
-const E = sqrt(1 - 2M/rp + a^2/rp^2 - 2M*a^2/rp^3) / sqrt(1 - 3M/rp + 2a*sqrt(M/rp^3))
-const L = (rp^2 - 2M*rp + a*sqrt(M*rp)) / (rp*sqrt(rp - 3M + 2a*sqrt(M/rp)))
 const MODE = 2
 const NSAMPLES = 2000
 const OFFSETS = (1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6)
@@ -35,8 +33,10 @@ setprecision(BigFloat, 300)
 """Context in type T with best-possible coefficients (computed in Tsetup)."""
 function make_ctx(::Type{T}; setup=T) where {T}
     c = effsource_create(T(M), T(a))
-    set_particle!(c, Coordinate{T}(r=T(rp), theta=T(thp), phi=T(php), t=T(1)),
-                  T(E), T(L); setup=setup)
+    W = T === BigFloat ? BigFloat : Float64
+    th = T === BigFloat ? T(pi)/2 : T(thp)
+    set_particle!(c, Coordinate{T}(r=T(rp), theta=th, phi=T(php), t=T(1)),
+                  kerr_circular_EL(W(M), W(a), W(rp))...; setup=setup)
     return c
 end
 
@@ -83,17 +83,20 @@ run("SOURCE          calc_m src", source)
 
 println("""
 \nConclusion (see also the numbers above):
-  * SR HELPS as a bias-reducer: its ensemble mean beats the deterministic
-    Float32 value by 1-2 orders of magnitude at moderate offsets, because
-    deterministic rounding is directionally biased while SR is ~unbiased even
-    through the cancellation (mean error ~ the 'mean SE' column, and it falls
-    like 1/sqrt(N)).
-  * But it is NOT a cure: it trades bias for VARIANCE. A single SR sample is no
-    better than deterministic; you only win by averaging, and the samples needed
-    for a target accuracy grow like (spread/target)^2 -- which blows up as
-    dr,dtheta shrink. Below offset ~1e-4, Float32 fails outright (NaN) from
-    dynamic-range underflow, which no rounding mode can fix.
-  * SR's most reliable role here is DIAGNOSTIC: the spread is a cheap estimate of
-    how many digits the cancellation destroyed. For actual accuracy in the deep
-    near-zone, use the structural fixes (Offset API + Double64/BigFloat setup, or
-    an analytic reformulation).""")
+  * SR HELPS as a bias-reducer at moderate offsets: at offsets 1e-1 and 1e-2 its
+    ensemble mean beats the deterministic Float32 value by one to three orders
+    of magnitude, for the puncture and for the source.
+  * SR is unbiased only at the larger offsets: the mean error is comparable to
+    the 'mean SE' column for the puncture down to offset 1e-2 and for the source
+    at 1e-1. Closer in the mean error exceeds the mean SE, for the source by
+    orders of magnitude at 1e-3, so averaging more samples does not converge to
+    the truth there.
+  * It is NOT a cure: it trades bias for VARIANCE, and the samples needed for a
+    target accuracy grow like (spread/target)^2. The puncture spread grows by
+    three orders of magnitude from offset 1e-1 to 1e-3, and the source spread by
+    more than one from 1e-1 to 1e-2. From offset 1e-4 down, Float32 fails
+    outright (NaN) from dynamic-range underflow, which no rounding mode can fix.
+  * As a DIAGNOSTIC the spread bounds the error only where SR is unbiased; for
+    the source at offset 1e-3 it understates the error by an order of magnitude.
+    For actual accuracy in the deep near-zone, use the structural fixes
+    (Offset API + Double64/BigFloat setup, or an analytic reformulation).""")

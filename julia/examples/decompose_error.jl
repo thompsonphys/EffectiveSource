@@ -21,15 +21,15 @@ using DelimitedFiles
 
 const M, a = 1.0, 0.5
 const rp, thp, php = 10.0, pi/2, pi/3
-const E = sqrt(1 - 2M/rp + a^2/rp^2 - 2M*a^2/rp^3) / sqrt(1 - 3M/rp + 2a*sqrt(M/rp^3))
-const L = (rp^2 - 2M*rp + a*sqrt(M*rp)) / (rp*sqrt(rp - 3M + 2a*sqrt(M/rp)))
 
 setprecision(BigFloat, 300)
 
 function mkctx(::Type{T}; setup=T) where {T}
     c = effsource_create(T(M), T(a))
-    set_particle!(c, Coordinate{T}(r=T(rp), theta=T(thp), phi=T(php), t=T(1)),
-                  T(E), T(L); setup=setup)
+    W = T === BigFloat ? BigFloat : Float64
+    th = T === BigFloat ? T(pi)/2 : T(thp)
+    set_particle!(c, Coordinate{T}(r=T(rp), theta=th, phi=T(php), t=T(1)),
+                  kerr_circular_EL(W(M), W(a), W(rp))...; setup=setup)
     return c
 end
 

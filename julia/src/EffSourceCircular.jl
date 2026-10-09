@@ -25,7 +25,7 @@ using OffsetArrays
 using StaticArrays
 
 export Coordinate, Offset, EffsourceCtx, effsource_create, set_particle!,
-       phis, calc, phis_m, calc_m
+       phis, calc, phis_m, calc_m, kerr_circular_EL
 
 # --- helpers used by the generated kernels ---------------------------------
 
@@ -135,6 +135,7 @@ end
 
 # --- generated code --------------------------------------------------------
 
+include("geodesic.jl")
 include("reei_data.jl")        # REEI_FLAT + reei(T, m,i,j,k)
 include("_ctx_struct.jl")      # Coordinate, EffsourceCtx, effsource_create
 

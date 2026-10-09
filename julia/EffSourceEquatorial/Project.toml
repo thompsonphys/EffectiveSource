@@ -1,0 +1,18 @@
+name = "EffSourceEquatorial"
+uuid = "9a151e41-bd2c-4ed1-b936-6394787d1b62"
+version = "0.1.0"
+authors = ["Julia port of Barry Wardell's EffectiveSource"]
+
+[deps]
+EffSourceCircular = "b0b1e5a6-7c2d-4c3e-9f1a-2d3e4f5a6b7c"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+OffsetArrays = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+StochasticRounding = "3843c9a1-1f18-49ff-9d99-1b4c8a8e97ed"
+DoubleFloats = "497a8b3b-efae-58df-a0af-a86822472b78"
+
+[sources]
+EffSourceCircular = {path = ".."}
+
+[compat]
+julia = "1.11"

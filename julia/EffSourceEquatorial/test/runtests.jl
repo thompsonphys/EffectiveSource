@@ -1,0 +1,5 @@
+include("common.jl")
+include("test_geodesic.jl")
+include("test_coefficients.jl")
+include("test_kernels.jl")
+include("test_independent.jl")

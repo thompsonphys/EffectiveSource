@@ -12,14 +12,12 @@ using Printf
 
 const M, a = 1.0, 0.5
 const rp, thp, php = 10.0, pi/2, pi/3
-const E = sqrt(1 - 2M/rp + a^2/rp^2 - 2M*a^2/rp^3) / sqrt(1 - 3M/rp + 2a*sqrt(M/rp^3))
-const L = (rp^2 - 2M*rp + a*sqrt(M*rp)) / (rp*sqrt(rp - 3M + 2a*sqrt(M/rp)))
 
 setprecision(BigFloat, 300)
 
 ctx = effsource_create(big(M), big(a))
-set_particle!(ctx, Coordinate{BigFloat}(r=big(rp), theta=big(thp), phi=big(php), t=big(1)),
-              big(E), big(L))
+set_particle!(ctx, Coordinate{BigFloat}(r=big(rp), theta=big(pi)/2, phi=big(php), t=big(1)),
+              kerr_circular_EL(big(M), big(a), big(rp))...)
 
 const DISTS = 10 .^ range(-9, -2; length=15)
 const RAYS = [(1.0, 0.0), (cos(pi/4), sin(pi/4)), (0.0, 1.0)]

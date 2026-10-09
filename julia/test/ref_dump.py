@@ -20,12 +20,10 @@ es.disable_gsl_error_handler()
 # --- fixed circular orbit (matches test_ctx.py) ----------------------------
 M, a = 1.0, 0.5
 rp, thp, php, tp = 10.0, math.pi / 2.0, math.pi / 3.0, 1.0
-E = math.sqrt(1 - 2 * M / rp + a**2 / rp**2 - 2 * M * a**2 / rp**3) / math.sqrt(
-    1 - 3 * M / rp + 2 * a * math.sqrt(M / rp**3)
-)
-L = (rp**2 - 2 * M * rp + a * math.sqrt(M * rp)) / (
-    rp * math.sqrt(rp - 3 * M + 2 * a * math.sqrt(M / rp))
-)
+v = math.sqrt(M / rp)
+den = math.sqrt(1 - 3 * v**2 + 2 * a / M * v**3)
+E = (1 - 2 * v**2 + a / M * v**3) / den
+L = math.sqrt(M * rp) * (1 - 2 * a / M * v**3 + a**2 / M**2 * v**4) / den
 
 ctx = es.EffsourceContext(M, a)
 xp = es.make_coordinate(t=tp, r=rp, theta=thp, phi=php)

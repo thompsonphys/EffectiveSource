@@ -18,14 +18,12 @@ using Printf
 # --- reference orbit -------------------------------------------------------
 const M, a = 1, 1/2
 const rp, thp, php = 10.0, π/2, π/3
-const E = sqrt(1 - 2M/rp + a^2/rp^2 - 2M*a^2/rp^3) / sqrt(1 - 3M/rp + 2a*sqrt(M/rp^3))
-const L = (rp^2 - 2M*rp + a*sqrt(M*rp)) / (rp*sqrt(rp - 3M + 2a*sqrt(M/rp)))
 
 const MODES = (2, 10)                       # m-mode values to map
 const NANGLES = 12                          # ray angles over [0, 2pi)
 const ANGLES = range(0, 2π; length = NANGLES + 1)[1:NANGLES]
-# distance-to-particle, log-spaced. Reaches 1e-12 so the real-space fields (which
-# are intrinsically robust via the Offset API) still reveal the r-rp coordinate
+# distance-to-particle, log-spaced. Reaches 1e-12 so the real-space puncture (which
+# is intrinsically robust via the Offset API) still reveals the r-rp coordinate
 # cancellation of the absolute-Coordinate path deep in the near zone.
 const DISTS = 10 .^ range(-12, 0; length = 49)
 
@@ -34,8 +32,10 @@ setprecision(BigFloat, 256)
 # Float64 pipeline (realistic default coefficient set-up) and BigFloat truth.
 function make_ctx(::Type{T}) where {T}
     c = effsource_create(T(M), T(a))
-    xp = Coordinate{T}(r = T(rp), theta = T(thp), phi = T(php), t = T(1))
-    set_particle!(c, xp, T(E), T(L); setup = (T === BigFloat ? BigFloat : T))
+    W = T === BigFloat ? BigFloat : Float64
+    th = T === BigFloat ? T(pi)/2 : T(thp)
+    xp = Coordinate{T}(r = T(rp), theta = th, phi = T(php), t = T(1))
+    set_particle!(c, xp, kerr_circular_EL(W(M), W(a), W(rp))...; setup = (T === BigFloat ? BigFloat : T))
     return c
 end
 const CTX64 = make_ctx(Float64)
@@ -146,9 +146,11 @@ println("""
 \nReading it: 'off' isolates the intrinsic evaluation error (Offset API); 'abs'
 adds the r-rp coordinate cancellation (absolute Coordinates). abs >= off, and the
 gap is the cost of forming dr = r - rp near the particle -- avoidable with the
-Offset API. The m-mode source (src_m) breaks down farthest out (most
-cancellation-prone); the real-space fields via the Offset API stay accurate
-throughout the sampled range (breakdown 0). All are direction dependent -- see
+Offset API. The real-space source (src) has the largest off>1e-6 breakdown
+distance; only the real-space puncture (phis) stays accurate throughout the
+sampled range with the Offset API (breakdown 0). All are direction dependent -- see
 the per-angle curves above and ray_error.csv. (High modes also lose relative
 accuracy at field zero-crossings farther out, where |value|->0 -- a separate
-effect not counted here; it is visible in the CSV.)""")
+effect not counted here; it is visible in the CSV.) The BigFloat truth uses
+constants computed in BigFloat, so these numbers include the rounding of E and L
+in the Float64 run.""")

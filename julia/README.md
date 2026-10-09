@@ -17,7 +17,8 @@ using EffSourceCircular
 
 ctx = effsource_create(1.0, 0.5)                      # M, a
 xp  = Coordinate{Float64}(r=10.0, theta=π/2, phi=π/3, t=1.0)
-set_particle!(ctx, xp, E, L)                          # constants of motion
+E, L = kerr_circular_EL(1.0, 0.5, 10.0)               # circular-geodesic constants
+set_particle!(ctx, xp, E, L)
 
 x = Coordinate{Float64}(r=10.1, theta=π/2+0.01, phi=π/3+0.02, t=0.0)
 
@@ -34,6 +35,21 @@ Output conventions match the C code:
 To run at another precision, just build the context and field point in that
 type (see `examples/stochastic_rounding.jl`).
 
+**Orbital constants.** `E` and `L` must be those of the circular geodesic at the
+particle radius, and `kerr_circular_EL(M, a, r)` returns them. With other values the
+effective source is not small, and accuracy statements about it do not carry over
+to the physical problem. Rounding the constants to Float64 is itself an error
+source near the particle. It leaves an off-shell residual in the real-space
+source that grows like d⁻⁴ for an offset d along (1,1,1): relative 1e-12 at
+d = 0.1, 1e-4 at 1e-3, above 1 below 1e-4. The m = 2 mode changes by only 3e-10
+at d = 1e-6. A BigFloat reference therefore needs the constants in BigFloat,
+`kerr_circular_EL(big(M), big(a), big(r))`, and a particle in the equatorial
+plane at that precision, `theta=big(pi)/2`. The Float64 value `π/2` converted to
+BigFloat lies 6e-17 off the plane, which changes the BigFloat source by a relative
+1.7e-6 at d = 1e-3 and 1.7e3 at d = 1e-6. The tests and examples build every
+BigFloat context this way, so the Float64 error measured against such a reference
+includes the rounding of the constants.
+
 ### Reducing numerical cancellation
 
 Two knobs help where this code is ill-conditioned (near the particle, and in the
@@ -49,8 +65,11 @@ phis(ctx, off);  calc(ctx, off);  phis_m(ctx, 2, off);  calc_m(ctx, 2, off)
 ```
 
 Every kernel has both a `Coordinate` and an `Offset` method; they share an
-identical core. In the near zone this recovers ~3 orders of magnitude in `src`
-(e.g. rel error 2.8e-10 → 2.9e-13 at offset `1e-6`). `Offset(x, xp)` builds one
+identical core. In the near zone this keeps the puncture and its derivatives at
+machine precision (offset 1e-6 along (1,1,1): PhiS 8.6e-11 → 1.1e-16, ∂r PhiS
+4.9e-10 → 7.2e-16). It does not rescue the effective source there: with geodesic
+constants the source is a near-total cancellation, and its Float64 relative error
+at that offset is about 2e11 with either API. `Offset(x, xp)` builds one
 from absolute coordinates (no accuracy gain — the subtraction still happens).
 
 **Extended-precision coefficient setup.** The `A####` coefficients are
@@ -63,7 +82,7 @@ set_particle!(ctx, xp, E, L; setup=BigFloat)   # or Double64
 
 Default `setup` is the context type, reproducing the direct computation exactly.
 At the reference orbit, `setup=BigFloat` makes all 53 coefficients
-correctly-rounded `Float64` (vs 31/53 with the default) — a last-ULP gain here
+correctly-rounded `Float64` (vs 24/53 with the default) — a last-ULP gain here
 that grows in strong-field regimes. Both knobs preserve the working type
 (including stochastic-rounding types).
 
@@ -77,8 +96,8 @@ calc_m(ctx, 2, off; comp=true)     # compensated source numerator
 
 Default is **off**, so results are byte-identical to the naive C reference unless
 you ask. The benefit is real but *regime-dependent*: it helps the **source
-numerator** where summation error dominates (≈9× in `Float32` at offset 0.1,
-≈20× in `Float64` at 0.01), gives little for the puncture, and does **not** help
+numerator** where summation error dominates (m = 2 source:
+≈40× in Float32 at offset 0.1, ≈6× in Float64 at offset 0.3), gives little for the puncture, and does **not** help
 the deep near-zone, where the error is input cancellation rather than summation
 (there it can even be neutral or worse — use `Double64`/`BigFloat` or the offset
 API instead). It applies only to IEEE floats; stochastic-rounding and `BigFloat`
@@ -128,8 +147,9 @@ julia --project test/runtests.jl
 ```
 
 `test/ref_dump.py` drives the compiled `effsource_circular` `.so` live and the
-Julia `Float64` port is checked against it point-by-point (fields/derivatives to
-~1e-13, the cancellation-heavy source to ~1e-9). Further test sets assert: no
+Julia `Float64` port is checked against it point-by-point (fields and derivatives to
+~1e-12, and the m-mode source, a near-total cancellation for geodesic constants,
+to ~1e-4). Further test sets assert: no
 `Float64` contamination (a `Float32` input yields `Float32` output throughout);
 arbitrary-precision AGM elliptic integrals (Legendre's relation to <1e-70 in
 `BigFloat`); the offset API's near-particle accuracy gain; and the extended
@@ -141,6 +161,4 @@ at the repo root). Override the interpreter with `PYTHON=/path/to/python3`.
 
 ## Scope
 
-Circular orbits only — this file is self-contained. The eccentric/equatorial
-code (`kerr-equatorial-*.c`) and its large coefficient files are not ported; the
-generic-`T` design leaves the door open to port them the same way.
+Circular orbits only. The eccentric equatorial code is ported in `EffSourceEquatorial/`, which reuses `Coordinate`, `Offset`, the AGM elliptic integrals and the `ReEI` table from this package.

@@ -18,15 +18,16 @@ using Printf
 # --- fixed circular orbit (same as the test suite) -------------------------
 const M, a = 1, 5e-1
 const rp, thp, php = 10, π/2, π/3
-const Efd = sqrt(1 - 2M/rp + a^2/rp^2 - 2M*a^2/rp^3) / sqrt(1 - 3M/rp + 2a*sqrt(M/rp^3))
-const Lfd = (rp^2 - 2M*rp + a*sqrt(M*rp)) / (rp*sqrt(rp - 3M + 2a*sqrt(M/rp)))
 
 """Build a context + field point in precision T and return phis(ctx, x)."""
 function eval_phis(::Type{T}) where {T}
     ctx = effsource_create(T(M), T(a))
-    xp = Coordinate{T}(r=T(rp), theta=T(thp), phi=T(php), t=T(1))
-    set_particle!(ctx, xp, T(Efd), T(Lfd))
-    x = Coordinate{T}(r=T(rp + 0.1), theta=T(thp + 0.01), phi=T(php + 0.02), t=T(0))
+    isbig = T === BigFloat
+    xp = Coordinate{T}(r=T(rp), theta=isbig ? T(pi)/2 : T(thp), phi=T(php), t=T(1))
+    W = isbig ? BigFloat : Float64
+    set_particle!(ctx, xp, kerr_circular_EL(W(M), W(a), W(rp))...)
+    th = isbig ? T(pi)/2 + (T(thp + 0.01) - T(thp)) : T(thp + 0.01)
+    x = Coordinate{T}(r=T(rp + 0.1), theta=th, phi=T(php + 0.02), t=T(0))
     return phis(ctx, x)
 end
 
@@ -53,17 +54,18 @@ end
 
 println("""
 \nTakeaway: a single deterministic low-precision value hides its rounding error,
-while stochastic rounding turns that error into an observable *distribution* --
-the reported spread is a direct estimate of how much this kernel's answer can be
-trusted at the given precision. (SR is unbiased per operation; for a long
-nonlinear pipeline like this one the mean still carries some residual bias, so
-the spread is the more honest diagnostic than the mean alone.)""")
+while stochastic rounding turns that error into an observable *distribution*.
+In Float32sr the spread is of the size of the error, so it estimates how much
+this kernel's answer can be trusted. In BFloat16sr the error of the mean exceeds
+the spread by about an order of magnitude: SR is unbiased per operation, but for
+a long nonlinear pipeline like this one the mean keeps a residual bias, and at
+that precision the spread understates the error.""")
 
 # --- m-mode under SR: the AGM elliptic integrals keep the SR type end-to-end
 ctx = effsource_create(Float32sr(M), Float32sr(a))
 set_particle!(ctx, Coordinate{Float32sr}(r=Float32sr(rp), theta=Float32sr(thp),
                                           phi=Float32sr(php), t=Float32sr(1)),
-              Float32sr(Efd), Float32sr(Lfd))
+              kerr_circular_EL(Float64(M), Float64(a), Float64(rp))...)
 xm = Coordinate{Float32sr}(r=Float32sr(rp+0.1), theta=Float32sr(thp+0.01),
                            phi=Float32sr(php+0.02), t=Float32sr(0))
 @printf("\nm=2 mode under Float32sr:  PhiS_m = %s\n", string(phis_m(ctx, 2, xm)))

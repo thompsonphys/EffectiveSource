@@ -130,9 +130,16 @@ def convert_reei(expr):
     return pat.sub(lambda m: f"reei(T,{m.group(1)},{m.group(2)},{m.group(3)},{m.group(4)})", expr)
 
 
+def convert_imei(expr):
+    """ImEI[m][i][j][k] -> imei(T,m,i,j,k)."""
+    pat = re.compile(r"ImEI\[([^\]]*)\]\[([^\]]*)\]\[([^\]]*)\]\[([^\]]*)\]")
+    return pat.sub(lambda m: f"imei(T,{m.group(1)},{m.group(2)},{m.group(3)},{m.group(4)})", expr)
+
+
 def convert_expr(expr):
     """Convert a single C expression (no statements) to Julia."""
     expr = convert_reei(expr)
+    expr = convert_imei(expr)
     expr = convert_pow(expr)
     expr = wrap_float_literals(expr)
     expr = re.sub(r"\bNAN\b", "T(NaN)", expr)   # C NAN -> typed NaN

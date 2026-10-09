@@ -154,18 +154,21 @@ class Parser:
 _TYPE_RE = re.compile(r"^(const\s+)?(struct\s+coordinate|double|int)\b\s*")
 _ARR_DECL_RE = re.compile(r"^(\w+)\[(\d+)\]$")
 _ARR_INIT_RE = re.compile(r"^(\w+)\[(\d+)\]\s*=\s*\{(.*)\}$", re.DOTALL)
+_ELLKE_RE = re.compile(r"^effsource_ellKE\((\w+),\s*(\w+),\s*&(\w+),\s*&(\w+)\)$")
 
 
-def emit_stmt(text, accum=None):
+def emit_stmt(text, accum=None, comp=True):
     """Return a list of Julia lines for one C simple-statement. If `accum` is the
     name of a compensated accumulator, a `NAME += EXPR` for it is emitted as a
     Neumaier step `NAME, NAME_c = _cadd(cm, NAME, NAME_c, EXPR)`."""
     text = text.replace("->", ".").strip()
     if text == "" or text == "return":
-        # bare return only appears inside the m>20 guard -> handled in emit_if
         return ["#= return =#"]
     if text.startswith("printf"):
-        return []  # diagnostic; dropped (guard emits an error instead)
+        return []
+    m = _ELLKE_RE.match(text)
+    if m:
+        return [f"({m.group(3)}, {m.group(4)}) = _ellKE({m.group(1)}, {m.group(2)})"]
 
     m = _TYPE_RE.match(text)
     if m:
@@ -186,12 +189,13 @@ def emit_stmt(text, accum=None):
             if "=" in item:
                 lhs, rhs = item.split("=", 1)
                 lhs = lhs.strip()
-                rhs_jl = compensate_src(rhs) if lhs == "effsrc" else convert_rhs(rhs)
+                rhs_jl = compensate_src(rhs) if (comp and lhs == "effsrc") else convert_rhs(rhs)
                 lines.append(f"{lhs} = {rhs_jl}")
-            # bare scalar decl -> dropped
         return lines
 
-    # not a declaration: assignment / compound assignment / pointer output
+    if "-=" in text:
+        lhs, rhs = text.split("-=", 1)
+        return [f"{lhs.strip()} -= {convert_rhs(rhs)}"]
     if "+=" in text:
         lhs, rhs = text.split("+=", 1)
         lhs = lhs.strip()
@@ -203,37 +207,37 @@ def emit_stmt(text, accum=None):
     is_src = False
     if lhs.startswith("*"):
         base = lhs[1:].strip()
-        lhs = base + "_out"              # *src -> src_out, *PhiS -> PhiS_out
+        lhs = base + "_out"
         is_src = base == "src"
-    rhs_jl = compensate_src(rhs) if is_src else convert_rhs(rhs)
+    rhs_jl = compensate_src(rhs) if (comp and is_src) else convert_rhs(rhs)
     return [f"{lhs} = {rhs_jl}"]
 
 
 def _for_header(header):
-    """`int i=0; i<N; i++` -> ('i', 'N')."""
+    """`int k = START; k < N; k++` -> ('k', 'START', '<', 'N'); also accepts `<=`."""
     parts = [p.strip() for p in header.split(";")]
-    var = re.match(r"int\s+(\w+)\s*=", parts[0]).group(1)
-    bound = re.match(r"\w+\s*<\s*(\w+)", parts[1]).group(1)
-    return var, bound
+    var, start = re.match(r"int\s+(\w+)\s*=\s*(.+)$", parts[0]).groups()
+    op, bound = re.match(r"\w+\s*(<=|<)\s*(.+)$", parts[1]).groups()
+    return var, start.strip(), op, bound.strip()
 
 
-def emit(node, indent, out, accum=None):
+def emit(node, indent, out, accum=None, comp=True):
     pad = "    " * indent
     kind = node[0]
     if kind == "stmt":
-        for line in emit_stmt(node[1], accum):
+        for line in emit_stmt(node[1], accum, comp):
             out.append(pad + line)
     elif kind == "block":
         for it in node[1]:
-            emit(it, indent, out, accum)
+            emit(it, indent, out, accum, comp)
     elif kind == "for":
-        var, bound = _for_header(node[1])
-        out.append(f"{pad}for {var} in 0:({bound})-1")
-        emit(node[2], indent + 1, out, accum)
+        var, start, op, bound = _for_header(node[1])
+        rng = f"{start}:({bound})-1" if op == "<" else f"{start}:({bound})"
+        out.append(f"{pad}for {var} in {rng}")
+        emit(node[2], indent + 1, out, accum, comp)
         out.append(f"{pad}end")
     elif kind == "if":
         cond = node[1].replace("->", ".").strip()
-        # the sole `if` in these kernels is the m>20 unsupported-mode guard
         out.append(f"{pad}if {convert_rhs(cond)}")
         out.append(f"{pad}    error(\"effsource: requested m-mode is not supported (m>20)\")")
         out.append(f"{pad}end")
@@ -286,14 +290,14 @@ def _accum_name(init_node, for_node):
     return lhs if (iop == "+=" and ilhs == lhs) else None
 
 
-def transpile_body(c_body):
+def transpile_body(c_body, comp=True):
     p = Parser(strip_comments(c_body))
     items = p.parse_items()
     out = []
     i, n = 0, len(items)
     while i < n:
         nxt = items[i + 1] if i + 1 < n else None
-        name = _accum_name(items[i], nxt) if nxt is not None else None
+        name = _accum_name(items[i], nxt) if (comp and nxt is not None) else None
         if name:
             out.append(f"    {name} = zero(T)")
             out.append(f"    {name}_c = zero(T)")
@@ -301,6 +305,6 @@ def transpile_body(c_body):
             out.append(f"    {name} = {name} + {name}_c")
             i += 2
         else:
-            emit(items[i], 1, out)
+            emit(items[i], 1, out, comp=comp)
             i += 1
     return out
