@@ -39,11 +39,12 @@ struct effsource_equatorial_sweep {
   double d2A_dt2_R0[5];
   double d2A_dt2_R1[5];
   double src_P[8], src_Q[7], src_alpha;
+  double src_P_lo[8], src_Q_lo[7], src_alpha_lo;
 };
 
 /* Separation below which effsource_equatorial_ctx_sweep_prepare uses double-double arithmetic, in units of
    C1 = (alpha20 dr^2 + alpha02 dtheta^2) / beta. */
-#define EFFSOURCE_SWEEP_DD_C1 1e-3
+#define EFFSOURCE_SWEEP_DD_C1 1e-2
 
 /* Compute the coefficients for the field point (r, theta): with effsource_equatorial_ctx_sweep_prepare_dd
    if C1 < EFFSOURCE_SWEEP_DD_C1 and with effsource_equatorial_ctx_sweep_prepare_double otherwise. */
@@ -51,7 +52,9 @@ void effsource_equatorial_ctx_sweep_prepare(const struct effsource_equatorial_ct
   struct effsource_equatorial_sweep * sweep);
 
 /* Compute the coefficients in double-double arithmetic and round them once to
-   double. The src coefficients cancel strongly near the particle and a
+   double. The src coefficients src_P, src_Q and src_alpha also keep their
+   low parts in src_P_lo, src_Q_lo and src_alpha_lo, which only the analytic
+   m-modes use. The src coefficients cancel strongly near the particle and a
    coefficient error repeats identically at every azimuth, so double precision
    loses digits there. With this function the src of effsource_equatorial_ctx_sweep_src is
    correct to about 1e-15 relative to its largest value over the azimuths. */
@@ -59,7 +62,8 @@ void effsource_equatorial_ctx_sweep_prepare_dd(const struct effsource_equatorial
   struct effsource_equatorial_sweep * sweep);
 
 /* Compute the coefficients in double arithmetic: about 20 times faster than
-   effsource_equatorial_ctx_sweep_prepare_dd, and as accurate as effsource_equatorial_ctx_calc within a factor of a few. */
+   effsource_equatorial_ctx_sweep_prepare_dd, and as accurate as effsource_equatorial_ctx_calc within a factor of a few.
+   The low parts src_P_lo, src_Q_lo and src_alpha_lo are zero. */
 void effsource_equatorial_ctx_sweep_prepare_double(const struct effsource_equatorial_ctx * ctx, double r, double theta,
   struct effsource_equatorial_sweep * sweep);
 

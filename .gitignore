@@ -12,3 +12,4 @@ __pycache__
 effsource_circular.py
 effsource_equatorial.py
 *.csv
+test/mmode-check
