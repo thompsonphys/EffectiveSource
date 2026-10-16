@@ -25,7 +25,7 @@
  *      and the numerical m-modes of the hybrid sweep_src route are compared with
  *      the trapezoid rule applied to the long double calc function, where that
  *      grid has at most 2^15 points. The error is normalised by the largest
- *      reference m-mode, as in sweep-check.
+ *      reference m-mode, as in point-check.
  *   4. The analytic m-modes of PhiS, dPhiS/dr and dPhiS/dtheta from
  *      effsource_equatorial_ctx_analytic_modes are checked twice. First, those from
  *      effsource_equatorial_ctx_prepare_dd are compared mode by mode with
@@ -56,7 +56,7 @@
 
 #include "effsource_equatorial.h"
 #include "effsource_equatorial_mmode.h"
-#include "effsource_equatorial_sweep.h"
+#include "effsource_equatorial_point.h"
 
 #define MMAX 20
 #define KERNEL_MU_MAX 40

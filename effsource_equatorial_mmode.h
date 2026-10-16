@@ -9,7 +9,7 @@
  *   f = [P(u) + dQ cQ Q(u)] / s^(2 nu)
  *
  * with nu = 11/2 for src, 7/2 for PhiS and 9/2 for dPhiS/dr and dPhiS/dtheta.
- * The prepare functions of effsource_equatorial_sweep.h store the src
+ * The prepare functions of effsource_equatorial_point.h store the src
  * coefficients P, Q and alpha as double-double values (src_P + src_P_lo, ...).
  * The PhiS coefficients are the A_R0 and A_R1 fields, and those of the
  * derivatives follow exactly from them and from the dA_dr, dA_dth, dA_dQ and
@@ -42,7 +42,7 @@
 #ifndef EFFSOURCE_EQUATORIAL_MMODE_H
 #define EFFSOURCE_EQUATORIAL_MMODE_H
 
-#include "effsource_equatorial_sweep.h"
+#include "effsource_equatorial_point.h"
 
 /* Number of kernel orders nu = 11/2, 9/2, ..., -5/2 that the s^2 basis uses. */
 #define EFFSOURCE_MMODE_NUM_NU 9

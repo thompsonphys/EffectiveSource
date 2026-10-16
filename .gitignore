@@ -1,7 +1,7 @@
 test/*.o
 test/kerr-circular
 test/kerr-equatorial
-test/sweep-check
+test/point-check
 test/kerr-equatorial-ctx-ld.c
 *.dat
 .vscode

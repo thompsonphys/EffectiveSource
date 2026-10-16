@@ -36,7 +36,7 @@
 #include <time.h>
 
 #include "effsource_equatorial.h"
-#include "effsource_equatorial_sweep.h"
+#include "effsource_equatorial_point.h"
 
 #define MMAX 10
 #define NUM_OUTPUTS 16
