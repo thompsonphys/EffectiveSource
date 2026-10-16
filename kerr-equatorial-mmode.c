@@ -1,12 +1,11 @@
 /*******************************************************************************
- * Analytic m-modes of the equatorial effective source. See
+ * Analytic m-modes of the equatorial effective source and singular field. See
  * effsource_equatorial_mmode.h for the formulas.
  *
  * All kernels, basis changes and contractions use double-double arithmetic, so
- * the m-modes are the exact integrals of the src coefficients in the sweep
- * structure to about 1e-16 relative to each mode. The basis and the recurrence
- * only change the cost and the condition number that multiplies the
- * double-double rounding.
+ * the m-modes are the exact integrals of the numerator coefficients to about
+ * 1e-16 relative to each mode. The basis and the recurrence only change the
+ * cost and the condition number that multiplies the double-double rounding.
  ******************************************************************************/
 
 #include <math.h>
@@ -15,10 +14,15 @@
 #include "effsource_dd.h"
 #include "effsource_equatorial_mmode.h"
 
-/* Number of coefficients of P(u), Q(u) and G(u) = 2 u (1 - u) Q(u). */
-#define NUM_P 8
-#define NUM_Q 7
-#define NUM_G 9
+/* Largest number of coefficients of P(u), Q(u), G(u) = 2 u (1 - u) Q(u) and of
+   the Fourier series of P(u) and sin(psi) Q(u) / 2 over all outputs. */
+#define MAX_P 8
+#define MAX_Q 7
+#define MAX_G (MAX_Q + 2)
+#define MAX_F (MAX_Q + 1)
+
+/* Number of outputs: src, PhiS, dPhiS/dr and dPhiS/dtheta. */
+#define NUM_OUTPUTS 4
 
 /* Kernel orders nu = 11/2 - i for i = 0..NUM_NU-1 plus one lower order for K_1. */
 #define NUM_J (EFFSOURCE_MMODE_NUM_NU + 1)
@@ -184,6 +188,12 @@ int effsource_equatorial_mmode_kernels(double alpha, double beta, int num_nu, in
   return 0;
 }
 
+/* The numerator of one output, [P(u) + dQ cQ Q(u)] / s^(2 nu) with nu = 11/2 - top. */
+struct numerator {
+  int top, num_P, num_Q;
+  effsource_dd P[MAX_P], Q[MAX_Q];
+};
+
 /* Coefficients of p(w - alpha) in w from those of p(v), in place. */
 static void taylor_shift(effsource_dd alpha, int size, effsource_dd *c)
 {
@@ -216,38 +226,38 @@ static double fourier_coefficient(int j, int l)
   return l == 0 ? value : (l % 2 ? -2.0 : 2.0) * value;
 }
 
-/* even[m] = int cos(m psi) P(u) / s^11 dpsi and odd[m] = int sin(m psi) sin(psi) Q(u) / (2 s^11) dpsi
-   in the s^2 basis, with sin(m psi) / sin(psi) = sum_l cos((m - 1 - 2l) psi). */
-static void s2_contraction(effsource_dd alpha, double beta, const effsource_dd *P, const effsource_dd *Q,
-                           int m_max, double *even, double *odd)
+/* even[m] = int cos(m psi) P(u) / s^(2 nu) dpsi and odd[m] = int sin(m psi) sin(psi) Q(u) / (2 s^(2 nu)) dpsi
+   in the s^2 basis, with sin(m psi) / sin(psi) = sum_l cos((m - 1 - 2l) psi). K holds the kernels
+   K[i * stride + mu] = K_mu^(11/2 - i) for i = 0..n->top + n->num_Q + 1 and mu = 0..m_max. */
+static void s2_contraction(const struct numerator *n, effsource_dd alpha, double beta, const effsource_dd *K,
+                           int stride, int m_max, double *even, double *odd)
 {
-  effsource_dd e[NUM_P], g[NUM_G];
-  for (int j = 0; j < NUM_P; j++)
-    e[j] = P[j];
-  for (int j = 0; j < NUM_G; j++) {
-    const effsource_dd up = j >= 1 && j - 1 < NUM_Q ? Q[j - 1] : dd_d(0.0);
-    const effsource_dd down = j >= 2 && j - 2 < NUM_Q ? Q[j - 2] : dd_d(0.0);
+  const int num_G = n->num_Q + 2;
+  effsource_dd e[MAX_P], g[MAX_G];
+  for (int j = 0; j < n->num_P; j++)
+    e[j] = n->P[j];
+  for (int j = 0; j < num_G; j++) {
+    const effsource_dd up = j >= 1 && j - 1 < n->num_Q ? n->Q[j - 1] : dd_d(0.0);
+    const effsource_dd down = j >= 2 && j - 2 < n->num_Q ? n->Q[j - 2] : dd_d(0.0);
     g[j] = dd_mul_d(dd_sub(up, down), 2.0);
   }
-  to_s2_basis(alpha, beta, NUM_P, e);
-  to_s2_basis(alpha, beta, NUM_G, g);
-  effsource_dd K[EFFSOURCE_MMODE_NUM_NU * (EFFSOURCE_MMODE_MAX_MU + 1)];
-  kernels_dd(alpha, beta, NUM_G, m_max, K);
-  const int stride = m_max + 1;
-  effsource_dd L_previous[NUM_G], L_current[NUM_G];
-  for (int k = 0; k < NUM_G; k++) {
+  to_s2_basis(alpha, beta, n->num_P, e);
+  to_s2_basis(alpha, beta, num_G, g);
+  const effsource_dd *k_top = K + n->top * stride;
+  effsource_dd L_previous[MAX_G], L_current[MAX_G];
+  for (int k = 0; k < num_G; k++) {
     L_previous[k] = dd_d(0.0);
     L_current[k] = dd_d(0.0);
   }
   for (int m = 0; m <= m_max; m++) {
     effsource_dd even_sum = dd_d(0.0), odd_sum = dd_d(0.0);
-    for (int k = 0; k < NUM_P; k++)
-      even_sum = dd_add(even_sum, dd_mul(e[k], K[k * stride + m]));
-    for (int k = 0; k < NUM_G; k++) {
+    for (int k = 0; k < n->num_P; k++)
+      even_sum = dd_add(even_sum, dd_mul(e[k], k_top[k * stride + m]));
+    for (int k = 0; k < num_G; k++) {
       if (m == 1)
-        L_current[k] = K[k * stride];
+        L_current[k] = k_top[k * stride];
       else if (m >= 2) {
-        const effsource_dd L_next = dd_add(L_previous[k], dd_mul_d(K[k * stride + m - 1], 2.0));
+        const effsource_dd L_next = dd_add(L_previous[k], dd_mul_d(k_top[k * stride + m - 1], 2.0));
         L_previous[k] = L_current[k];
         L_current[k] = L_next;
       }
@@ -259,40 +269,41 @@ static void s2_contraction(effsource_dd alpha, double beta, const effsource_dd *
 }
 
 /* The same integrals in the Fourier basis P(u) = sum_l p_l cos(l psi) and
-   sin(psi) Q(u) / 2 = sum_l q_l sin(l psi), with the kernels for nu = 11/2 only:
+   sin(psi) Q(u) / 2 = sum_l q_l sin(l psi), with the kernels k[mu] = K_mu^(nu) of nu = 11/2 - top
+   only, for mu = 0..m_max + MAX_F - 1:
    even[m] = sum_l p_l (K_(m+l) + K_|m-l|) / 2, odd[m] = sum_l q_l (K_|m-l| - K_(m+l)) / 2. */
-static void fourier_contraction(effsource_dd alpha, double beta, const effsource_dd *P, const effsource_dd *Q,
-                                int m_max, double *even, double *odd)
+static void fourier_contraction(const struct numerator *n, const effsource_dd *k, int m_max, double *even,
+                                double *odd)
 {
-  effsource_dd p[NUM_P], q[NUM_P], Qc[NUM_Q];
-  for (int l = 0; l < NUM_P; l++) {
+  effsource_dd p[MAX_F], q[MAX_F], Qc[MAX_Q];
+  for (int l = 0; l < MAX_F; l++) {
     p[l] = dd_d(0.0);
     q[l] = dd_d(0.0);
-    for (int j = l; j < NUM_P; j++)
-      p[l] = dd_add(p[l], dd_mul_d(P[j], fourier_coefficient(j, l)));
   }
-  for (int l = 0; l < NUM_Q; l++) {
+  for (int l = 0; l < n->num_P; l++)
+    for (int j = l; j < n->num_P; j++)
+      p[l] = dd_add(p[l], dd_mul_d(n->P[j], fourier_coefficient(j, l)));
+  for (int l = 0; l < n->num_Q; l++) {
     Qc[l] = dd_d(0.0);
-    for (int j = l; j < NUM_Q; j++)
-      Qc[l] = dd_add(Qc[l], dd_mul_d(Q[j], fourier_coefficient(j, l)));
+    for (int j = l; j < n->num_Q; j++)
+      Qc[l] = dd_add(Qc[l], dd_mul_d(n->Q[j], fourier_coefficient(j, l)));
   }
-  q[1] = dd_scale(Qc[0], 0.5);
-  for (int l = 1; l < NUM_Q; l++) {
+  if (n->num_Q > 0)
+    q[1] = dd_scale(Qc[0], 0.5);
+  for (int l = 1; l < n->num_Q; l++) {
     q[l + 1] = dd_add(q[l + 1], dd_scale(Qc[l], 0.25));
     if (l >= 2)
       q[l - 1] = dd_sub(q[l - 1], dd_scale(Qc[l], 0.25));
   }
-  for (int l = 1; l < NUM_P; l++) {
+  const int num_F = n->num_P > n->num_Q + 1 ? n->num_P : n->num_Q + 1;
+  for (int l = 1; l < num_F; l++) {
     p[l] = dd_scale(p[l], 0.5);
     q[l] = dd_scale(q[l], 0.5);
   }
-  const int mu_max = m_max + NUM_P - 1;
-  effsource_dd K[EFFSOURCE_MMODE_MAX_MU + 1];
-  kernels_dd(alpha, beta, 1, mu_max, K);
   for (int m = 0; m <= m_max; m++) {
-    effsource_dd even_sum = dd_mul(p[0], K[m]), odd_sum = dd_d(0.0);
-    for (int l = 1; l < NUM_P; l++) {
-      const effsource_dd low = K[abs(m - l)], high = K[m + l];
+    effsource_dd even_sum = dd_mul(p[0], k[m]), odd_sum = dd_d(0.0);
+    for (int l = 1; l < num_F; l++) {
+      const effsource_dd low = k[abs(m - l)], high = k[m + l];
       even_sum = dd_add(even_sum, dd_mul(p[l], dd_add(low, high)));
       odd_sum = dd_add(odd_sum, dd_mul(q[l], dd_sub(low, high)));
     }
@@ -301,34 +312,198 @@ static void fourier_contraction(effsource_dd alpha, double beta, const effsource
   }
 }
 
-int effsource_equatorial_ctx_sweep_src_modes(const struct effsource_equatorial_ctx *ctx,
-                                             const struct effsource_equatorial_sweep *sweep, int m_max,
-                                             double *re, double *im)
+static void clear(struct numerator *n, int top, int num_P, int num_Q)
 {
-  if (m_max < 0 || m_max + NUM_P - 1 > EFFSOURCE_MMODE_MAX_MU)
-    return 1;
-  if (!(sweep->src_alpha > 0.0))
-    return 2;
+  n->top = top;
+  n->num_P = num_P;
+  n->num_Q = num_Q;
+  for (int j = 0; j < MAX_P; j++)
+    n->P[j] = dd_d(0.0);
+  for (int j = 0; j < MAX_Q; j++)
+    n->Q[j] = dd_d(0.0);
+}
+
+/* r(u) += f u^shift a(u) for the polynomial a of size n. */
+static void add_scaled(effsource_dd *r, const effsource_dd *a, int n, effsource_dd f, int shift)
+{
+  for (int j = 0; j < n; j++)
+    r[j + shift] = dd_add(r[j + shift], dd_mul(f, a[j]));
+}
+
+/* The PhiS-family coefficients of the point structure as double-double polynomials. */
+struct field_coefficients {
+  effsource_dd A_R0[5], A_R1[5], dA_dr_R0[5], dA_dr_R1[4], dA_dth_R0[4], dA_dth_R1[4];
+  effsource_dd dA_dQ_R0[4], dA_dQ_R1[4], dA_dR_R0[5];
+};
+
+static void load(const double *hi, const double *lo, int n, effsource_dd *poly)
+{
+  for (int j = 0; j < n; j++)
+    poly[j] = (effsource_dd){hi[j], lo[j]};
+}
+
+static void load_field_coefficients(const struct effsource_equatorial_point *point, struct field_coefficients *f)
+{
+  load(point->A_R0, point->A_R0_lo, 5, f->A_R0);
+  load(point->A_R1, point->A_R1_lo, 5, f->A_R1);
+  load(point->dA_dr_R0, point->dA_dr_R0_lo, 5, f->dA_dr_R0);
+  load(point->dA_dr_R1, point->dA_dr_R1_lo, 4, f->dA_dr_R1);
+  load(point->dA_dth_R0, point->dA_dth_R0_lo, 4, f->dA_dth_R0);
+  load(point->dA_dth_R1, point->dA_dth_R1_lo, 4, f->dA_dth_R1);
+  load(point->dA_dQ_R0, point->dA_dQ_R0_lo, 4, f->dA_dQ_R0);
+  load(point->dA_dQ_R1, point->dA_dQ_R1_lo, 4, f->dA_dQ_R1);
+  load(point->dA_dR_R0, point->dA_dR_R0_lo, 5, f->dA_dR_R0);
+}
+
+/* The src numerator over s^11. */
+static void src_numerator(const struct effsource_equatorial_point *point, struct numerator *n)
+{
+  clear(n, 0, 8, 7);
+  load(point->src_P, point->src_P_lo, 8, n->P);
+  load(point->src_Q, point->src_Q_lo, 7, n->Q);
+}
+
+/* The PhiS numerator over s^7: A = P_A(u) + dR Q_A(u) with dR = 2 dQ cQ. */
+static void PhiS_numerator(const struct field_coefficients *f, struct numerator *n)
+{
+  clear(n, 2, 5, 5);
+  add_scaled(n->P, f->A_R0, 5, dd_d(1.0), 0);
+  add_scaled(n->Q, f->A_R1, 5, dd_d(2.0), 0);
+}
+
+/* The dPhiS/dtheta numerator over s^9: s^2 dA/dtheta - 7 alpha02 dtheta A. */
+static void dPhiS_dth_numerator(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
+                                const struct field_coefficients *f, effsource_dd alpha, struct numerator *n)
+{
+  clear(n, 1, 5, 5);
+  const effsource_dd beta = dd_d(ctx->beta);
+  const effsource_dd weight = dd_mul_d(dd_two_sum(point->theta, -ctx->xp.theta), -7.0 * ctx->alpha02);
+  add_scaled(n->P, f->dA_dth_R0, 4, alpha, 0);
+  add_scaled(n->P, f->dA_dth_R0, 4, beta, 1);
+  add_scaled(n->P, f->A_R0, 5, weight, 0);
+  add_scaled(n->Q, f->dA_dth_R1, 4, dd_mul_d(alpha, 2.0), 0);
+  add_scaled(n->Q, f->dA_dth_R1, 4, dd_mul_d(beta, 2.0), 1);
+  add_scaled(n->Q, f->A_R1, 5, dd_mul_d(weight, 2.0), 0);
+}
+
+/* The dPhiS/dr numerator over s^9: s^2 DA/Dr - (7/2) A Ds^2/Dr, where the total r
+   derivative includes d(dphib)/dr = -c, so that d(dQ)/dr = -c cQ / 2, d(dR)/dr = -c (1 - 2u)
+   and Ds^2/Dr = 2 alpha20 dr - c beta dQ cQ. With the partial derivatives in the point structure,
+   DA/Dr = D_even(u) + dQ cQ D_odd(u) with
+   D_even = dA_dr_R0 - c u (1 - u) dA_dQ_R1 - c (1 - 2u) dA_dR_R0 and D_odd = 2 dA_dr_R1 - c dA_dQ_R0 / 2. */
+static void dPhiS_dr_numerator(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
+                               const struct field_coefficients *f, effsource_dd alpha, struct numerator *n)
+{
+  clear(n, 1, 7, 5);
+  const double c = ctx->c;
+  const effsource_dd beta = dd_d(ctx->beta);
+  effsource_dd D_even[6], D_odd[4];
+  for (int j = 0; j < 6; j++)
+    D_even[j] = dd_d(0.0);
+  for (int j = 0; j < 4; j++)
+    D_odd[j] = dd_d(0.0);
+  add_scaled(D_even, f->dA_dr_R0, 5, dd_d(1.0), 0);
+  add_scaled(D_even, f->dA_dQ_R1, 4, dd_d(-c), 1);
+  add_scaled(D_even, f->dA_dQ_R1, 4, dd_d(c), 2);
+  add_scaled(D_even, f->dA_dR_R0, 5, dd_d(-c), 0);
+  add_scaled(D_even, f->dA_dR_R0, 5, dd_d(2.0 * c), 1);
+  add_scaled(D_odd, f->dA_dr_R1, 4, dd_d(2.0), 0);
+  add_scaled(D_odd, f->dA_dQ_R0, 4, dd_d(-0.5 * c), 0);
+  const effsource_dd radial = dd_mul_d(dd_two_sum(point->r, -ctx->xp.r), -7.0 * ctx->alpha20);
+  const effsource_dd angular = dd_mul_d(beta, 3.5 * c);
+  add_scaled(n->P, D_even, 6, alpha, 0);
+  add_scaled(n->P, D_even, 6, beta, 1);
+  add_scaled(n->P, f->A_R0, 5, radial, 0);
+  add_scaled(n->P, f->A_R1, 5, dd_mul_d(angular, 2.0), 1);
+  add_scaled(n->P, f->A_R1, 5, dd_mul_d(angular, -2.0), 2);
+  add_scaled(n->Q, D_odd, 4, alpha, 0);
+  add_scaled(n->Q, D_odd, 4, beta, 1);
+  add_scaled(n->Q, f->A_R1, 5, dd_mul_d(radial, 2.0), 0);
+  add_scaled(n->Q, f->A_R0, 5, angular, 0);
+}
+
+/* The m-modes of the given numerators: even and odd integrals from one kernel table, then the
+   phase exp(-i m phi0) with phi0 = phi_p + c dr, written to out[i][2m] and out[i][2m + 1]. */
+static void modes(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
+                  effsource_dd alpha, int m_max, int count, const struct numerator *numerators, double *const *out)
+{
   const double beta = ctx->beta;
-  const effsource_dd alpha = {sweep->src_alpha, sweep->src_alpha_lo};
-  effsource_dd P[NUM_P], Q[NUM_Q];
-  for (int j = 0; j < NUM_P; j++)
-    P[j] = (effsource_dd){sweep->src_P[j], sweep->src_P_lo[j]};
-  for (int j = 0; j < NUM_Q; j++)
-    Q[j] = (effsource_dd){sweep->src_Q[j], sweep->src_Q_lo[j]};
-  const double C1 = sweep->src_alpha / beta;
-  double even[EFFSOURCE_MMODE_MAX_MU + 1], odd[EFFSOURCE_MMODE_MAX_MU + 1];
-  if (C1 < EFFSOURCE_MMODE_FOURIER_C1 && (C1 < FOURIER_MIN_C1 || forward_is_accurate(log_rho(C1), m_max)))
-    s2_contraction(alpha, beta, P, Q, m_max, even, odd);
-  else
-    fourier_contraction(alpha, beta, P, Q, m_max, even, odd);
-  const double phi0 = ctx->xp.phi + ctx->c * (sweep->r - ctx->xp.r);
+  const double C1 = point->src_alpha / beta;
+  const int s2_basis = C1 < EFFSOURCE_MMODE_FOURIER_C1 && (C1 < FOURIER_MIN_C1 || forward_is_accurate(log_rho(C1), m_max));
+  int num_nu = 0;
+  for (int i = 0; i < count; i++) {
+    const int needed = s2_basis ? numerators[i].top + numerators[i].num_Q + 2 : numerators[i].top + 1;
+    num_nu = needed > num_nu ? needed : num_nu;
+  }
+  const int mu_max = s2_basis ? m_max : m_max + MAX_F - 1;
+  effsource_dd K[EFFSOURCE_MMODE_NUM_NU * (EFFSOURCE_MMODE_MAX_MU + 1)];
+  kernels_dd(alpha, beta, num_nu, mu_max, K);
+  double even[NUM_OUTPUTS][EFFSOURCE_MMODE_MAX_MU + 1], odd[NUM_OUTPUTS][EFFSOURCE_MMODE_MAX_MU + 1];
+  for (int i = 0; i < count; i++) {
+    if (s2_basis)
+      s2_contraction(&numerators[i], alpha, beta, K, mu_max + 1, m_max, even[i], odd[i]);
+    else
+      fourier_contraction(&numerators[i], K + numerators[i].top * (mu_max + 1), m_max, even[i], odd[i]);
+  }
+  const double phi0 = ctx->xp.phi + ctx->c * (point->r - ctx->xp.r);
   for (int m = 0; m <= m_max; m++) {
     const effsource_dd angle = dd_two_prod(m, phi0);
     const double c_hi = cos(angle.hi), s_hi = sin(angle.hi);
     const double c = c_hi - angle.lo * s_hi, s = s_hi + angle.lo * c_hi;
-    re[m] = c * even[m] - s * odd[m];
-    im[m] = -(s * even[m] + c * odd[m]);
+    for (int i = 0; i < count; i++) {
+      out[i][2 * m] = c * even[i][m] - s * odd[i][m];
+      out[i][2 * m + 1] = -(s * even[i][m] + c * odd[i][m]);
+    }
+  }
+}
+
+int effsource_equatorial_ctx_analytic_modes(const struct effsource_equatorial_ctx *ctx,
+                                         const struct effsource_equatorial_point *point, int m_max, double *src,
+                                         double *PhiS, double *dPhiS_dr, double *dPhiS_dth)
+{
+  if (m_max < 0 || m_max + MAX_F - 1 > EFFSOURCE_MMODE_MAX_MU)
+    return 1;
+  if (!(point->src_alpha > 0.0))
+    return 2;
+  const effsource_dd alpha = {point->src_alpha, point->src_alpha_lo};
+  struct numerator numerators[NUM_OUTPUTS];
+  double *out[NUM_OUTPUTS];
+  int count = 0;
+  struct field_coefficients field;
+  if (PhiS || dPhiS_dr || dPhiS_dth)
+    load_field_coefficients(point, &field);
+  if (src) {
+    src_numerator(point, &numerators[count]);
+    out[count++] = src;
+  }
+  if (PhiS) {
+    PhiS_numerator(&field, &numerators[count]);
+    out[count++] = PhiS;
+  }
+  if (dPhiS_dr) {
+    dPhiS_dr_numerator(ctx, point, &field, alpha, &numerators[count]);
+    out[count++] = dPhiS_dr;
+  }
+  if (dPhiS_dth) {
+    dPhiS_dth_numerator(ctx, point, &field, alpha, &numerators[count]);
+    out[count++] = dPhiS_dth;
+  }
+  if (count > 0)
+    modes(ctx, point, alpha, m_max, count, numerators, out);
+  return 0;
+}
+
+int effsource_equatorial_ctx_analytic_src_modes(const struct effsource_equatorial_ctx *ctx,
+                                             const struct effsource_equatorial_point *point, int m_max,
+                                             double *re, double *im)
+{
+  double src[2 * (EFFSOURCE_MMODE_MAX_MU + 1)];
+  const int status = effsource_equatorial_ctx_analytic_modes(ctx, point, m_max, src, NULL, NULL, NULL);
+  if (status != 0)
+    return status;
+  for (int m = 0; m <= m_max; m++) {
+    re[m] = src[2 * m];
+    im[m] = src[2 * m + 1];
   }
   return 0;
 }

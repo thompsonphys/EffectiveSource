@@ -1,12 +1,12 @@
 /*******************************************************************************
- * Check effsource_equatorial_mmode_kernels and effsource_equatorial_ctx_sweep_src_modes.
+ * Check effsource_equatorial_mmode_kernels and effsource_equatorial_ctx_analytic_src_modes.
  *
  *   1. The kernels K_mu^(nu) for nu = 11/2..-5/2 and mu = 0..KERNEL_MU_MAX are
  *      compared with a long double trapezoid rule, which converges
  *      exponentially for the periodic integrand. The error is normalised by
  *      K_0^(nu), the integral of the absolute value of the integrand: the
  *      reference loses relative accuracy where K_mu is far below K_0.
- *   2. The analytic m-modes from effsource_equatorial_ctx_sweep_prepare_dd are
+ *   2. The analytic m-modes from effsource_equatorial_ctx_prepare_dd are
  *      compared with the trapezoid rule applied to the src of
  *      effsource_equatorial_ctx_sweep_src with the same coefficients, on a grid
  *      fine enough that aliasing is below 1e-20. The trapezoid rule evaluates
@@ -21,11 +21,25 @@
  *      plus the rounding of the reference. With --dump FILE the program also
  *      writes the coefficients and analytic m-modes of every case for
  *      mmode_exact_check.py, which checks each mode against mpmath.
- *   3. The analytic m-modes from the hybrid effsource_equatorial_ctx_sweep_prepare
+ *   3. The analytic m-modes from the hybrid effsource_equatorial_ctx_prepare
  *      and the numerical m-modes of the hybrid sweep_src route are compared with
  *      the trapezoid rule applied to the long double calc function, where that
  *      grid has at most 2^15 points. The error is normalised by the largest
  *      reference m-mode, as in sweep-check.
+ *   4. The analytic m-modes of PhiS, dPhiS/dr and dPhiS/dtheta from
+ *      effsource_equatorial_ctx_analytic_modes are checked twice. First, those from
+ *      effsource_equatorial_ctx_prepare_dd are compared mode by mode with
+ *      the trapezoid rule applied, on the long double nodes of check 2, to the
+ *      chain-rule formulas of effsource_equatorial_ctx_sweep_calc evaluated in
+ *      long double from the same coefficients. The error of mode m is
+ *      normalised by |f_m| + 1e-19 I / MAX_FIELD_MODE_ERROR with
+ *      I = int |f| dphi. This checks the u-polynomial numerators and the
+ *      contractions. Second, those from the double-double and the hybrid
+ *      prepare are compared with the trapezoid rule applied to the long double
+ *      calc function, where that grid has at most 2^17 points, with the error
+ *      normalised by the largest reference m-mode of each output. Its nodes
+ *      2 pi k / n are rounded to double, which biases the small modes by about
+ *      1e-16 |f'|, so this comparison is not made mode by mode.
  *
  * Errors are grouped by decade of C1. The program also reports the time of the
  * analytic m-modes and of the numerical m-modes with the azimuthal grid of the
@@ -51,6 +65,10 @@
 #define MAX_MODE_ERROR 1e-13
 #define MAX_SRC_ERROR_RATIO 2.0
 #define ERROR_FLOOR 1e-13
+#define MAX_FIELD_ERROR 1e-14
+#define MAX_FIELD_MODE_ERROR 1e-13
+#define FIELD_MAX_POINTS (1 << 17)
+#define NUM_FIELDS 3
 
 static const long double pi_long = 3.141592653589793238462643383279502884L;
 
@@ -147,15 +165,15 @@ static double kernel_error(double alpha, double beta)
 /* Numerical m-modes of the rational form of sweep_src with the double-double
    coefficients, evaluated in long double on nodes of psi = dphib in (-pi, pi],
    and the bound I on its rounding. */
-static double rational_modes(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_sweep *sweep,
+static double rational_modes(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
                              int n, long double complex *modes)
 {
-  const long double alpha = (long double)sweep->src_alpha + sweep->src_alpha_lo, beta = ctx->beta;
+  const long double alpha = (long double)point->src_alpha + point->src_alpha_lo, beta = ctx->beta;
   long double P[8], Q[7];
   for (int j = 0; j < 8; j++)
-    P[j] = (long double)sweep->src_P[j] + sweep->src_P_lo[j];
+    P[j] = (long double)point->src_P[j] + point->src_P_lo[j];
   for (int j = 0; j < 7; j++)
-    Q[j] = (long double)sweep->src_Q[j] + sweep->src_Q_lo[j];
+    Q[j] = (long double)point->src_Q[j] + point->src_Q_lo[j];
   long double absolute = 0.0L;
   for (int m = 0; m <= MMAX; m++)
     modes[m] = 0.0L;
@@ -181,14 +199,14 @@ static double rational_modes(const struct effsource_equatorial_ctx *ctx, const s
       phase *= step;
     }
   }
-  const long double phi0 = ctx->xp.phi + ctx->c * (sweep->r - ctx->xp.r);
+  const long double phi0 = ctx->xp.phi + ctx->c * (point->r - ctx->xp.r);
   for (int m = 0; m <= MMAX; m++)
     modes[m] *= (cosl(m * phi0) - I * sinl(m * phi0)) * 2.0L * pi_long / n;
   return (double)(absolute * 2.0L * pi_long / n);
 }
 
 /* Numerical m-modes of sweep_src on n points, summed in long double, and int |src| dphi. */
-static double numerical_modes(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_sweep *sweep,
+static double numerical_modes(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
                               int n, long double complex *modes)
 {
   long double absolute = 0.0L;
@@ -196,7 +214,7 @@ static double numerical_modes(const struct effsource_equatorial_ctx *ctx, const 
     modes[m] = 0.0L;
   for (int k = 0; k < n; k++) {
     const double phi = 2.0 * M_PI * k / n;
-    const long double src = effsource_equatorial_ctx_sweep_src(ctx, sweep, phi);
+    const long double src = effsource_equatorial_ctx_sweep_src(ctx, point, phi);
     const long double complex step = cexpl(-I * (long double)phi);
     long double complex phase = 1.0L;
     absolute += fabsl(src);
@@ -232,8 +250,109 @@ static void reference_modes(const struct effsource_equatorial_ctx *ctx, double r
     modes[m] *= 2.0L * pi_long / n;
 }
 
+/* Numerical m-modes of PhiS, dPhiS/dr and dPhiS/dtheta of the long double calc function on
+   n points, and int |f| dphi of each. */
+static void field_reference_modes(const struct effsource_equatorial_ctx *ctx, double r, double theta, int n,
+                                  long double complex modes[NUM_FIELDS][MMAX + 1], double *absolute)
+{
+  long double sum_absolute[NUM_FIELDS] = {0.0L};
+  for (int f = 0; f < NUM_FIELDS; f++)
+    for (int m = 0; m <= MMAX; m++)
+      modes[f][m] = 0.0L;
+  for (int k = 0; k < n; k++) {
+    const double phi = 2.0 * M_PI * k / n;
+    struct coordinate x = {.r = r, .theta = theta, .phi = phi, .t = 0.0};
+    long double PhiS, d1[4], d2[10], src;
+    effsource_equatorial_ctx_calc_long_double(ctx, &x, &PhiS, d1, d2, &src);
+    const long double values[NUM_FIELDS] = {PhiS, d1[1], d1[2]};
+    const long double complex step = cexpl(-I * (long double)phi);
+    long double complex phase = 1.0L;
+    for (int f = 0; f < NUM_FIELDS; f++)
+      sum_absolute[f] += fabsl(values[f]);
+    for (int m = 0; m <= MMAX; m++) {
+      for (int f = 0; f < NUM_FIELDS; f++)
+        modes[f][m] += values[f] * phase;
+      phase *= step;
+    }
+  }
+  for (int f = 0; f < NUM_FIELDS; f++) {
+    absolute[f] = (double)(sum_absolute[f] * 2.0L * pi_long / n);
+    for (int m = 0; m <= MMAX; m++)
+      modes[f][m] *= 2.0L * pi_long / n;
+  }
+}
+
+/* Numerical m-modes of PhiS, dPhiS/dr and dPhiS/dtheta from the chain-rule formulas of
+   sweep_calc with the double-double coefficients, evaluated in long double on nodes of
+   psi = dphib in (-pi, pi], and int |f| dphi of each. */
+static void field_rational_modes(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
+                                 int n, long double complex modes[NUM_FIELDS][MMAX + 1], double *absolute)
+{
+#define LOAD(name, size) long double name[size]; for (int j = 0; j < size; j++) name[j] = (long double)point->name[j] + point->name##_lo[j]
+  LOAD(A_R0, 5); LOAD(A_R1, 5); LOAD(dA_dr_R0, 5); LOAD(dA_dr_R1, 4); LOAD(dA_dth_R0, 4); LOAD(dA_dth_R1, 4);
+  LOAD(dA_dQ_R0, 4); LOAD(dA_dQ_R1, 4); LOAD(dA_dR_R0, 5);
+#undef LOAD
+  const long double alpha = (long double)point->src_alpha + point->src_alpha_lo, beta = ctx->beta, c = ctx->c;
+  const long double dr = (long double)point->r - ctx->xp.r, dtheta = (long double)point->theta - ctx->xp.theta;
+  long double sum_absolute[NUM_FIELDS] = {0.0L};
+  for (int f = 0; f < NUM_FIELDS; f++)
+    for (int m = 0; m <= MMAX; m++)
+      modes[f][m] = 0.0L;
+  for (int k = 0; k < n; k++) {
+    const long double psi = 2.0L * pi_long * (k <= n / 2 ? k : k - n) / n;
+    const long double dQ = sinl(0.5L * psi), cQ = cosl(0.5L * psi), u = dQ * dQ, dR = sinl(psi), cR = cosl(psi);
+#define POLY(name, size) ({ long double value_ = 0.0L; for (int j = size - 1; j >= 0; j--) value_ = value_ * u + name[j]; value_; })
+    const long double A = POLY(A_R0, 5) + dR * POLY(A_R1, 5);
+    const long double dA_dr = POLY(dA_dr_R0, 5) + dR * POLY(dA_dr_R1, 4);
+    const long double dA_dth = POLY(dA_dth_R0, 4) + dR * POLY(dA_dth_R1, 4);
+    const long double dA_dQ = dQ * POLY(dA_dQ_R0, 4) + dR * dQ * POLY(dA_dQ_R1, 4);
+    const long double dA_dR = POLY(dA_dR_R0, 5);
+#undef POLY
+    const long double dQ_dr = -c * 0.5L * cQ, dR_dr = -c * cR;
+    const long double DA_Dr = dA_dr + dA_dQ * dQ_dr + dA_dR * dR_dr;
+    const long double s2 = alpha + beta * u, s = sqrtl(s2), s7 = s2 * s2 * s2 * s, s9 = s7 * s2;
+    const long double Ds2_Dr = 2.0L * ctx->alpha20 * dr + 2.0L * beta * dQ * dQ_dr;
+    const long double values[NUM_FIELDS] = {A / s7, (-7.0L * Ds2_Dr * A + 2.0L * DA_Dr * s2) / (2.0L * s9),
+                                            (-14.0L * ctx->alpha02 * dtheta * A + 2.0L * dA_dth * s2) / (2.0L * s9)};
+    const long double complex step = cR - I * dR;
+    long double complex phase = 1.0L;
+    for (int f = 0; f < NUM_FIELDS; f++)
+      sum_absolute[f] += fabsl(values[f]);
+    for (int m = 0; m <= MMAX; m++) {
+      for (int f = 0; f < NUM_FIELDS; f++)
+        modes[f][m] += values[f] * phase;
+      phase *= step;
+    }
+  }
+  const long double phi0 = ctx->xp.phi + ctx->c * (point->r - ctx->xp.r);
+  for (int f = 0; f < NUM_FIELDS; f++) {
+    absolute[f] = (double)(sum_absolute[f] * 2.0L * pi_long / n);
+    for (int m = 0; m <= MMAX; m++)
+      modes[f][m] *= (cosl(m * phi0) - I * sinl(m * phi0)) * 2.0L * pi_long / n;
+  }
+}
+
+/* Largest error of the analytic field m-modes relative to the largest reference mode of each
+   field, and largest error of a mode relative to itself plus the rounding of the reference. */
+static void field_errors(const double analytic[NUM_FIELDS][2 * (MMAX + 1)],
+                         long double complex reference[NUM_FIELDS][MMAX + 1], const double *absolute,
+                         double *global, double *per_mode)
+{
+  for (int f = 0; f < NUM_FIELDS; f++) {
+    long double scale = 0.0L;
+    for (int m = 0; m <= MMAX; m++)
+      scale = fmaxl(scale, cabsl(reference[f][m]));
+    for (int m = 0; m <= MMAX; m++) {
+      const long double difference = cabsl(analytic[f][2 * m] + I * analytic[f][2 * m + 1] - reference[f][m]);
+      global[f] = fmax(global[f], (double)(difference / scale));
+      per_mode[f] = fmax(per_mode[f],
+                         (double)(difference / (cabsl(reference[f][m]) + 1e-19L * absolute[f] / MAX_FIELD_MODE_ERROR)));
+    }
+  }
+}
+
 /* Time per call of the numerical m-modes with the Auto grid, as EccentricOrbit computes them. */
-static double numerical_time(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_sweep *sweep,
+static double numerical_time(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
                              int n, double complex *sink)
 {
   static double complex table[1 << 22];
@@ -243,7 +362,7 @@ static double numerical_time(const struct effsource_equatorial_ctx *ctx, const s
   const double start = now();
   for (int repeat = 0; repeat < repeats; repeat++) {
     for (int k = 0; k < n; k++) {
-      const double src = effsource_equatorial_ctx_sweep_src(ctx, sweep, 2.0 * M_PI * k / n);
+      const double src = effsource_equatorial_ctx_sweep_src(ctx, point, 2.0 * M_PI * k / n);
       double complex phase = 1.0;
       for (int m = 0; m <= MMAX; m++) {
         sink[m] += src * phase;
@@ -256,18 +375,18 @@ static double numerical_time(const struct effsource_equatorial_ctx *ctx, const s
 
 /* Write the coefficients and analytic m-modes of one case for mmode_exact_check.py. */
 static void dump_case(FILE *stream, const char *tag, const struct effsource_equatorial_ctx *ctx,
-                      const struct effsource_equatorial_sweep *sweep)
+                      const struct effsource_equatorial_point *point)
 {
   double re[MMAX + 1], im[MMAX + 1];
-  effsource_equatorial_ctx_sweep_src_modes(ctx, sweep, MMAX, re, im);
-  fprintf(stream, "%s %a %a %a %a\n", tag, sweep->src_alpha, sweep->src_alpha_lo, ctx->beta,
-          ctx->xp.phi + ctx->c * (sweep->r - ctx->xp.r));
+  effsource_equatorial_ctx_analytic_src_modes(ctx, point, MMAX, re, im);
+  fprintf(stream, "%s %a %a %a %a\n", tag, point->src_alpha, point->src_alpha_lo, ctx->beta,
+          ctx->xp.phi + ctx->c * (point->r - ctx->xp.r));
   fprintf(stream, "P");
   for (int j = 0; j < 8; j++)
-    fprintf(stream, " %a %a", sweep->src_P[j], sweep->src_P_lo[j]);
+    fprintf(stream, " %a %a", point->src_P[j], point->src_P_lo[j]);
   fprintf(stream, "\nQ");
   for (int j = 0; j < 7; j++)
-    fprintf(stream, " %a %a", sweep->src_Q[j], sweep->src_Q_lo[j]);
+    fprintf(stream, " %a %a", point->src_Q[j], point->src_Q_lo[j]);
   fprintf(stream, "\nS");
   for (int m = 0; m <= MMAX; m++)
     fprintf(stream, " %a %a", re[m], im[m]);
@@ -312,7 +431,11 @@ int main(int argc, char **argv)
 
   double mode_worst[NUM_DECADES] = {0}, src_analytic[NUM_DECADES] = {0}, src_numerical[NUM_DECADES] = {0};
   double time_analytic[NUM_DECADES] = {0}, time_numerical[NUM_DECADES] = {0}, time_prepare[NUM_DECADES] = {0};
+  double time_fields[NUM_DECADES] = {0};
+  double field_global_dd[NUM_DECADES][NUM_FIELDS] = {{0}}, field_mode_dd[NUM_DECADES][NUM_FIELDS] = {{0}};
+  double field_global[NUM_DECADES][NUM_FIELDS] = {{0}}, field_mode[NUM_DECADES][NUM_FIELDS] = {{0}};
   int count[NUM_DECADES] = {0}, count_reference[NUM_DECADES] = {0}, count_fourier[NUM_DECADES] = {0};
+  int count_field[NUM_DECADES] = {0};
   double complex sink[MMAX + 1] = {0};
 
   for (int is = 0; is < 2; is++)
@@ -328,24 +451,24 @@ int main(int argc, char **argv)
     for (int idth = 0; idth < 5; idth++) {
       const double r = particle_r[ir] + offsets_r[idr];
       const double theta = M_PI_2 - offsets_theta[idth];
-      struct effsource_equatorial_sweep sweep_dd, sweep;
-      effsource_equatorial_ctx_sweep_prepare_dd(ctx, r, theta, &sweep_dd);
-      const double C1 = sweep_dd.src_alpha / ctx->beta;
+      struct effsource_equatorial_point point_dd, point;
+      effsource_equatorial_ctx_prepare_dd(ctx, r, theta, &point_dd);
+      const double C1 = point_dd.src_alpha / ctx->beta;
       const int decade = decade_of(C1);
       count[decade]++;
       count_fourier[decade] += C1 >= EFFSOURCE_MMODE_FOURIER_C1;
 
       if (dump) {
-        struct effsource_equatorial_sweep sweep_double;
-        effsource_equatorial_ctx_sweep_prepare_double(ctx, r, theta, &sweep_double);
-        dump_case(dump, "DD", ctx, &sweep_dd);
-        dump_case(dump, "DBL", ctx, &sweep_double);
+        struct effsource_equatorial_point point_double;
+        effsource_equatorial_ctx_prepare_double(ctx, r, theta, &point_double);
+        dump_case(dump, "DD", ctx, &point_dd);
+        dump_case(dump, "DBL", ctx, &point_double);
       }
       double re[MMAX + 1], im[MMAX + 1];
-      effsource_equatorial_ctx_sweep_src_modes(ctx, &sweep_dd, MMAX, re, im);
+      effsource_equatorial_ctx_analytic_src_modes(ctx, &point_dd, MMAX, re, im);
       long double complex numerical[MMAX + 1];
       const int n = resolved_points(C1, MMAX);
-      const double absolute = rational_modes(ctx, &sweep_dd, n, numerical);
+      const double absolute = rational_modes(ctx, &point_dd, n, numerical);
       for (int m = 0; m <= MMAX; m++) {
         const long double complex difference = re[m] + I * im[m] - numerical[m];
         const double error = (double)(cabsl(difference) / (cabsl(numerical[m]) + 1e-19L * absolute / MAX_MODE_ERROR));
@@ -355,18 +478,23 @@ int main(int argc, char **argv)
       double start = now();
       const int repeats = 200;
       for (int repeat = 0; repeat < repeats; repeat++)
-        effsource_equatorial_ctx_sweep_prepare(ctx, r, theta, &sweep);
+        effsource_equatorial_ctx_prepare(ctx, r, theta, &point);
       time_prepare[decade] += (now() - start) / repeats;
       start = now();
       for (int repeat = 0; repeat < repeats; repeat++)
-        effsource_equatorial_ctx_sweep_src_modes(ctx, &sweep, MMAX, re, im);
+        effsource_equatorial_ctx_analytic_src_modes(ctx, &point, MMAX, re, im);
       time_analytic[decade] += (now() - start) / repeats;
-      time_numerical[decade] += numerical_time(ctx, &sweep, auto_points(C1, MMAX), sink);
+      double fields[NUM_FIELDS][2 * (MMAX + 1)], src_modes[2 * (MMAX + 1)];
+      start = now();
+      for (int repeat = 0; repeat < repeats; repeat++)
+        effsource_equatorial_ctx_analytic_modes(ctx, &point, MMAX, src_modes, fields[0], fields[1], fields[2]);
+      time_fields[decade] += (now() - start) / repeats;
+      time_numerical[decade] += numerical_time(ctx, &point, auto_points(C1, MMAX), sink);
 
       if (n <= (1 << 15)) {
         long double complex reference[MMAX + 1], hybrid_numerical[MMAX + 1];
         reference_modes(ctx, r, theta, n, reference);
-        numerical_modes(ctx, &sweep, n, hybrid_numerical);
+        numerical_modes(ctx, &point, n, hybrid_numerical);
         long double scale = 0.0L, error_analytic = 0.0L, error_numerical = 0.0L;
         for (int m = 0; m <= MMAX; m++) {
           scale = fmaxl(scale, cabsl(reference[m]));
@@ -376,6 +504,25 @@ int main(int argc, char **argv)
         src_analytic[decade] = fmax(src_analytic[decade], (double)(error_analytic / scale));
         src_numerical[decade] = fmax(src_numerical[decade], (double)(error_numerical / scale));
         count_reference[decade]++;
+      }
+
+      double fields_dd[NUM_FIELDS][2 * (MMAX + 1)], unused[NUM_FIELDS];
+      effsource_equatorial_ctx_analytic_modes(ctx, &point_dd, MMAX, NULL, fields_dd[0], fields_dd[1], fields_dd[2]);
+      {
+        long double complex rational[NUM_FIELDS][MMAX + 1];
+        double absolute[NUM_FIELDS];
+        field_rational_modes(ctx, &point_dd, n, rational, absolute);
+        field_errors((const double (*)[2 * (MMAX + 1)])fields_dd, rational, absolute, unused, field_mode_dd[decade]);
+      }
+      if (n <= FIELD_MAX_POINTS) {
+        long double complex reference[NUM_FIELDS][MMAX + 1];
+        double absolute[NUM_FIELDS];
+        field_reference_modes(ctx, r, theta, n, reference, absolute);
+        field_errors((const double (*)[2 * (MMAX + 1)])fields_dd, reference, absolute, field_global_dd[decade],
+                     unused);
+        field_errors((const double (*)[2 * (MMAX + 1)])fields, reference, absolute, field_global[decade],
+                     field_mode[decade]);
+        count_field[decade]++;
       }
     }
     effsource_equatorial_free(ctx);
@@ -402,6 +549,34 @@ int main(int argc, char **argv)
   }
   all_pass &= check("modes_vs_numerical", worst_mode <= MAX_MODE_ERROR, worst_mode);
   all_pass &= check("modes_vs_long_double", worst_ratio <= MAX_SRC_ERROR_RATIO, worst_ratio);
+
+  printf("\nPhiS, dPhiS/dr, dPhiS/dtheta m-modes m <= %d vs long double calc, by decade of C1\n", MMAX);
+  printf("  decade  cases | vs calc, largest-mode error: prepare_dd | hybrid                             |"
+         " vs same coefficients, per mode   | vs calc, per mode, hybrid          | time (us): src  all four\n");
+  double worst_field = 0.0, worst_field_mode = 0.0;
+  for (int d = 0; d < NUM_DECADES; d++) {
+    if (count[d] == 0)
+      continue;
+    printf("  1e-%-2d  %3d   |", d, count_field[d]);
+    for (int f = 0; f < NUM_FIELDS; f++)
+      printf(" %9.1e", field_global_dd[d][f]);
+    printf("    |");
+    for (int f = 0; f < NUM_FIELDS; f++)
+      printf(" %9.1e", field_global[d][f]);
+    printf("    |");
+    for (int f = 0; f < NUM_FIELDS; f++)
+      printf(" %9.1e", field_mode_dd[d][f]);
+    printf("  |");
+    for (int f = 0; f < NUM_FIELDS; f++)
+      printf(" %9.1e", field_mode[d][f]);
+    printf("  |       %7.2f  %8.2f\n", 1e6 * time_analytic[d] / count[d], 1e6 * time_fields[d] / count[d]);
+    for (int f = 0; f < NUM_FIELDS; f++) {
+      worst_field = fmax(worst_field, fmax(field_global_dd[d][f], field_global[d][f]));
+      worst_field_mode = fmax(worst_field_mode, field_mode_dd[d][f]);
+    }
+  }
+  all_pass &= check("field_modes", worst_field <= MAX_FIELD_ERROR, worst_field);
+  all_pass &= check("field_modes_per_mode", worst_field_mode <= MAX_FIELD_MODE_ERROR, worst_field_mode);
   if (creal(sink[0]) == 1.2345)
     printf("\n");
   if (dump)

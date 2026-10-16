@@ -17,11 +17,13 @@ from sympy.printing.c import C99CodePrinter
 
 CALC_NAME = "effsource_equatorial_ctx_calc"
 SPLIT_MARKER = "/* Convert partial derivatives to total derivatives */"
-SWEEP_STRUCT = "effsource_equatorial_sweep"
-PREPARE_NAME = "effsource_equatorial_ctx_sweep_prepare"
-PREPARE_DOUBLE_NAME = "effsource_equatorial_ctx_sweep_prepare_double"
-PREPARE_DD_NAME = "effsource_equatorial_ctx_sweep_prepare_dd"
+POINT_STRUCT = "effsource_equatorial_point"
+PREPARE_NAME = "effsource_equatorial_ctx_prepare"
+PREPARE_DOUBLE_NAME = "effsource_equatorial_ctx_prepare_double"
+PREPARE_DD_NAME = "effsource_equatorial_ctx_prepare_dd"
 DD_THRESHOLD = "1e-2"
+MMODE_FIELDS = {"A_R0", "A_R1", "dA_dr_R0", "dA_dr_R1", "dA_dth_R0", "dA_dth_R1", "dA_dQ_R0", "dA_dQ_R1",
+                "dA_dR_R0"}
 SWEEP_CALC_NAME = "effsource_equatorial_ctx_sweep_calc"
 SWEEP_SRC_NAME = "effsource_equatorial_ctx_sweep_src"
 THETA_TRIG = {"sin(theta)": "sinth", "sin(2 * theta)": "sin2th", "cos(2 * theta)": "cos2th"}
@@ -167,7 +169,7 @@ def build_layouts(polynomials):
 
 def horner_text(layout):
     """Return the C Horner expression of one polynomial part."""
-    field = f"sweep->{layout['field']}"
+    field = f"point->{layout['field']}"
     expression = f"{field}[{layout['size'] - 1}]"
     for index in range(layout["size"] - 2, -1, -1):
         expression = f"{field}[{index}] + {layout['variable']} * ({expression})"
@@ -441,11 +443,11 @@ def prepare_source(layouts, gens, ctx_scalars, weights, p_terms, q_terms, arithm
     scalars = sorted(name for name in used | {"alpha20", "alpha02"}
                      if CTX_FIELD.match(name) or name in ctx_scalars)
     lines = [
-        "  sweep->r = r;",
-        "  sweep->theta = theta;",
-        "  sweep->sinth = sin(theta);",
-        "  sweep->sin2th = sin(2 * theta);",
-        "  sweep->cos2th = cos(2 * theta);",
+        "  point->r = r;",
+        "  point->theta = theta;",
+        "  point->sinth = sin(theta);",
+        "  point->sin2th = sin(2 * theta);",
+        "  point->cos2th = cos(2 * theta);",
     ]
     if arithmetic == "double":
         printer = DoublePrinter()
@@ -458,14 +460,14 @@ def prepare_source(layouts, gens, ctx_scalars, weights, p_terms, q_terms, arithm
             return value
 
         def store_split(field, field_lo, value):
-            return [f"  sweep->{field} = {value};", f"  sweep->{field_lo} = 0.0;"]
+            return [f"  point->{field} = {value};", f"  point->{field_lo} = 0.0;"]
 
         lines += [
             "  const double dr = r - ctx->xp.r;",
             "  const double dtheta = theta - ctx->xp.theta;",
-            "  const double sinth = sweep->sinth;",
-            "  const double sin2th = sweep->sin2th;",
-            "  const double cos2th = sweep->cos2th;",
+            "  const double sinth = point->sinth;",
+            "  const double sin2th = point->sin2th;",
+            "  const double cos2th = point->cos2th;",
         ]
         lines += [f"  const double {name} = ctx->{name};" for name in scalars]
     else:
@@ -479,7 +481,7 @@ def prepare_source(layouts, gens, ctx_scalars, weights, p_terms, q_terms, arithm
             return f"dd_to_double({value})"
 
         def store_split(field, field_lo, value):
-            return [f"  sweep->{field} = {value}.hi;", f"  sweep->{field_lo} = {value}.lo;"]
+            return [f"  point->{field} = {value}.hi;", f"  point->{field_lo} = {value}.lo;"]
 
         lines += [
             "  const effsource_dd r_dd = dd_d(r);",
@@ -497,7 +499,10 @@ def prepare_source(layouts, gens, ctx_scalars, weights, p_terms, q_terms, arithm
         lines.append(f"  const {kind} {symbol} = {code(value)};")
     for (field, index), value in zip(names, reduced):
         lines.append(f"  const {kind} {field}_{index} = {code(value)};")
-        lines.append(f"  sweep->{field}[{index}] = {to_double(f'{field}_{index}')};")
+        if field in MMODE_FIELDS:
+            lines += store_split(f"{field}[{index}]", f"{field}_lo[{index}]", f"{field}_{index}")
+        else:
+            lines.append(f"  point->{field}[{index}] = {to_double(f'{field}_{index}')};")
     alpha = sp.Symbol("alpha20") * dr**2 + sp.Symbol("alpha02") * dtheta**2
     lines.append(f"  const {kind} alpha_s2 = {code(alpha)};")
     for symbol, value in weight_replacements:
@@ -516,16 +521,16 @@ def prepare_source(layouts, gens, ctx_scalars, weights, p_terms, q_terms, arithm
 def sweep_src_body(size_p, size_q):
     """Return the C body of the rational src evaluation."""
     def horner(field, size):
-        expression = f"sweep->{field}[{size - 1}]"
+        expression = f"point->{field}[{size - 1}]"
         for index in range(size - 2, -1, -1):
-            expression = f"sweep->{field}[{index}] + u * ({expression})"
+            expression = f"point->{field}[{index}] + u * ({expression})"
         return expression
-    return f"""  const double dr = sweep->r - ctx->xp.r;
+    return f"""  const double dr = point->r - ctx->xp.r;
   const double dphib = (phi_field - ctx->xp.phi) - ctx->c * dr;
   const double dQ = sin(0.5 * dphib);
   const double cQ = cos(0.5 * dphib);
   const double u = dQ * dQ;
-  const double s2 = sweep->src_alpha + ctx->beta * u;
+  const double s2 = point->src_alpha + ctx->beta * u;
   const double s2_2 = s2 * s2;
   const double P = {horner("src_P", size_p)};
   const double Q = {horner("src_Q", size_q)};
@@ -583,18 +588,18 @@ def sweep_calc_body(statements, polynomials, layouts):
             for declarator in statement["declarators"]:
                 name, value = declarator
                 if value == "x->r":
-                    declarator[1] = "sweep->r"
+                    declarator[1] = "point->r"
                 elif value == "x->theta":
-                    declarator[1] = "sweep->theta"
+                    declarator[1] = "point->theta"
                 elif value == "x->phi":
                     declarator[1] = "phi_field"
                 elif value in THETA_TRIG:
-                    declarator[1] = f"sweep->{THETA_TRIG[value]}"
+                    declarator[1] = f"point->{THETA_TRIG[value]}"
         rewritten.append(statement)
     for statement in rewritten:
         if statement["kind"] == "assign":
             for pattern, field in THETA_TRIG.items():
-                statement["rhs"] = statement["rhs"].replace(pattern, f"sweep->{field}")
+                statement["rhs"] = statement["rhs"].replace(pattern, f"point->{field}")
     rewritten = prune_unused(rewritten)
     return "\n".join(render(statement) for statement in rewritten)
 
@@ -602,6 +607,8 @@ def sweep_calc_body(statements, polynomials, layouts):
 def header_text(layouts, size_p, size_q):
     """Return the generated header."""
     fields = "\n".join(f"  double {layout['field']}[{layout['size']}];" for layout in layouts)
+    fields += "\n" + "\n".join(f"  double {layout['field']}_lo[{layout['size']}];" for layout in layouts
+                                if layout["field"] in MMODE_FIELDS)
     fields += f"\n  double src_P[{size_p}], src_Q[{size_q}], src_alpha;"
     fields += f"\n  double src_P_lo[{size_p}], src_Q_lo[{size_q}], src_alpha_lo;"
     return f"""/* Generated by codegen/sweep_codegen.py from kerr-equatorial-ctx.c. Do not edit. */
@@ -613,7 +620,7 @@ def header_text(layouts, size_p, size_q):
 
 /* Coefficients of {CALC_NAME} at one field point (r, theta) and one particle
    context, collected by powers of dQ = sin(dphib/2) and dR = sin(dphib). */
-struct {SWEEP_STRUCT} {{
+struct {POINT_STRUCT} {{
   double r, theta;
   double sinth, sin2th, cos2th;
 {fields}
@@ -621,39 +628,39 @@ struct {SWEEP_STRUCT} {{
 
 /* Separation below which {PREPARE_NAME} uses double-double arithmetic, in units of
    C1 = (alpha20 dr^2 + alpha02 dtheta^2) / beta. */
-#define EFFSOURCE_SWEEP_DD_C1 {DD_THRESHOLD}
+#define EFFSOURCE_PREPARE_DD_C1 {DD_THRESHOLD}
 
 /* Compute the coefficients for the field point (r, theta): with {PREPARE_DD_NAME}
-   if C1 < EFFSOURCE_SWEEP_DD_C1 and with {PREPARE_DOUBLE_NAME} otherwise. */
+   if C1 < EFFSOURCE_PREPARE_DD_C1 and with {PREPARE_DOUBLE_NAME} otherwise. */
 void {PREPARE_NAME}(const struct effsource_equatorial_ctx * ctx, double r, double theta,
-  struct {SWEEP_STRUCT} * sweep);
+  struct {POINT_STRUCT} * point);
 
 /* Compute the coefficients in double-double arithmetic and round them once to
-   double. The src coefficients src_P, src_Q and src_alpha also keep their
-   low parts in src_P_lo, src_Q_lo and src_alpha_lo, which only the analytic
-   m-modes use. The src coefficients cancel strongly near the particle and a
+   double. The src coefficients src_P, src_Q and src_alpha and the coefficients
+   of PhiS and of its first derivatives in r, theta, dQ and dR also keep their
+   low parts in the fields ending in _lo, which only the analytic m-modes use. The src coefficients cancel strongly near the particle and a
    coefficient error repeats identically at every azimuth, so double precision
    loses digits there. With this function the src of {SWEEP_SRC_NAME} is
    correct to about 1e-15 relative to its largest value over the azimuths. */
 void {PREPARE_DD_NAME}(const struct effsource_equatorial_ctx * ctx, double r, double theta,
-  struct {SWEEP_STRUCT} * sweep);
+  struct {POINT_STRUCT} * point);
 
 /* Compute the coefficients in double arithmetic: about 20 times faster than
    {PREPARE_DD_NAME}, and as accurate as {CALC_NAME} within a factor of a few.
-   The low parts src_P_lo, src_Q_lo and src_alpha_lo are zero. */
+   The low parts in the fields ending in _lo are zero. */
 void {PREPARE_DOUBLE_NAME}(const struct effsource_equatorial_ctx * ctx, double r, double theta,
-  struct {SWEEP_STRUCT} * sweep);
+  struct {POINT_STRUCT} * point);
 
-/* Same outputs as {CALC_NAME} at the field point (sweep->r, sweep->theta, phi_field). */
+/* Same outputs as {CALC_NAME} at the field point (point->r, point->theta, phi_field). */
 void {SWEEP_CALC_NAME}(const struct effsource_equatorial_ctx * ctx,
-  const struct {SWEEP_STRUCT} * sweep, double phi_field,
+  const struct {POINT_STRUCT} * point, double phi_field,
   double * PhiS, double * dPhiS_dx, double * d2PhiS_dx2, double * src);
 
-/* The src output of {CALC_NAME} at (sweep->r, sweep->theta, phi_field), from
+/* The src output of {CALC_NAME} at (point->r, point->theta, phi_field), from
    s2^(11/2) src = sum_j (src_P[j] + dQ cQ src_Q[j]) dQ^(2j), with
    dQ = sin(dphib/2), cQ = cos(dphib/2) and s2 = src_alpha + beta dQ^2. */
 double {SWEEP_SRC_NAME}(const struct effsource_equatorial_ctx * ctx,
-  const struct {SWEEP_STRUCT} * sweep, double phi_field);
+  const struct {POINT_STRUCT} * point, double phi_field);
 
 #endif /* EFFSOURCE_EQUATORIAL_SWEEP_H */
 """
@@ -668,38 +675,38 @@ def source_text(header_name, prepare_body, prepare_double_body, calc_body, src_b
 #include "{header_name}"
 
 void {PREPARE_DD_NAME}(const struct effsource_equatorial_ctx *ctx, double r, double theta,
-                       struct {SWEEP_STRUCT} *sweep)
+                       struct {POINT_STRUCT} *point)
 {{
 {prepare_body}
 }}
 
 void {PREPARE_DOUBLE_NAME}(const struct effsource_equatorial_ctx *ctx, double r, double theta,
-                           struct {SWEEP_STRUCT} *sweep)
+                           struct {POINT_STRUCT} *point)
 {{
 {prepare_double_body}
 }}
 
 void {PREPARE_NAME}(const struct effsource_equatorial_ctx *ctx, double r, double theta,
-                    struct {SWEEP_STRUCT} *sweep)
+                    struct {POINT_STRUCT} *point)
 {{
   const double dr = r - ctx->xp.r;
   const double dtheta = theta - ctx->xp.theta;
   const double C1 = (ctx->alpha20 * dr * dr + ctx->alpha02 * dtheta * dtheta) / ctx->beta;
-  if (C1 < EFFSOURCE_SWEEP_DD_C1)
-    {PREPARE_DD_NAME}(ctx, r, theta, sweep);
+  if (C1 < EFFSOURCE_PREPARE_DD_C1)
+    {PREPARE_DD_NAME}(ctx, r, theta, point);
   else
-    {PREPARE_DOUBLE_NAME}(ctx, r, theta, sweep);
+    {PREPARE_DOUBLE_NAME}(ctx, r, theta, point);
 }}
 
 void {SWEEP_CALC_NAME}(const struct effsource_equatorial_ctx *ctx,
-                       const struct {SWEEP_STRUCT} *sweep, double phi_field,
+                       const struct {POINT_STRUCT} *point, double phi_field,
                        double *PhiS, double *dPhiS_dx, double *d2PhiS_dx2, double *src)
 {{
 {calc_body}
 }}
 
 double {SWEEP_SRC_NAME}(const struct effsource_equatorial_ctx *ctx,
-                        const struct {SWEEP_STRUCT} *sweep, double phi_field)
+                        const struct {POINT_STRUCT} *point, double phi_field)
 {{
 {src_body}
 }}
