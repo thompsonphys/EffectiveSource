@@ -6,7 +6,38 @@ LIBS = -lm -lgsl -lgslcblas
 
 DEPS    = ../effsource.h
 
-all : kerr-equatorial kerr-circular
+all : kerr-equatorial kerr-circular sweep-check
+
+PYTHON = python3
+
+SWEEP_OBJS = sweep-check.o kerr-equatorial-ctx.o kerr-equatorial-ctx-ld.o kerr-equatorial-sweep-ctx.o kerr-equatorial-coeffs-ctx.o kerr-equatorial-dtcoeffs-ctx.o kerr-equatorial-dttcoeffs-ctx.o
+
+sweep-check : $(SWEEP_OBJS)
+	$(GCC) $(CFLAGS) -o sweep-check $(SWEEP_OBJS) $(LDFLAGS) $(LIBS)
+
+sweep-check.o : sweep-check.c ../effsource_equatorial.h ../effsource_equatorial_sweep.h
+	$(GCC) $(CFLAGS) -O2 -c -o sweep-check.o sweep-check.c
+
+kerr-equatorial-ctx.o : ../kerr-equatorial-ctx.c ../effsource_equatorial.h
+	$(GCC) $(CFLAGS) -O2 -c -o kerr-equatorial-ctx.o ../kerr-equatorial-ctx.c
+
+kerr-equatorial-ctx-ld.c : ../kerr-equatorial-ctx.c ../codegen/long_double_calc.py
+	$(PYTHON) ../codegen/long_double_calc.py ../kerr-equatorial-ctx.c kerr-equatorial-ctx-ld.c
+
+kerr-equatorial-ctx-ld.o : kerr-equatorial-ctx-ld.c ../effsource_equatorial.h
+	$(GCC) $(CFLAGS) -O2 -c -o kerr-equatorial-ctx-ld.o kerr-equatorial-ctx-ld.c
+
+kerr-equatorial-sweep-ctx.o : ../kerr-equatorial-sweep-ctx.c ../effsource_equatorial_sweep.h ../effsource_equatorial.h
+	$(GCC) $(CFLAGS) -O2 -c -o kerr-equatorial-sweep-ctx.o ../kerr-equatorial-sweep-ctx.c
+
+kerr-equatorial-coeffs-ctx.o : ../kerr-equatorial-coeffs-ctx.c
+	$(GCC) $(CFLAGS) -O0 -c -o kerr-equatorial-coeffs-ctx.o ../kerr-equatorial-coeffs-ctx.c
+
+kerr-equatorial-dtcoeffs-ctx.o : ../kerr-equatorial-dtcoeffs-ctx.c
+	$(GCC) $(CFLAGS) -O0 -c -o kerr-equatorial-dtcoeffs-ctx.o ../kerr-equatorial-dtcoeffs-ctx.c
+
+kerr-equatorial-dttcoeffs-ctx.o : ../kerr-equatorial-dttcoeffs-ctx.c
+	$(GCC) $(CFLAGS) -O0 -c -o kerr-equatorial-dttcoeffs-ctx.o ../kerr-equatorial-dttcoeffs-ctx.c
 
 kerr-equatorial : kerr-equatorial.o kerr-equatorial-coeffs.o kerr-equatorial-dtcoeffs.o kerr-equatorial-dttcoeffs.o effsource.o decompose.o $(DEPS)
 	$(GCC) $(CFLAGS) -o kerr-equatorial kerr-equatorial-coeffs.o kerr-equatorial-dtcoeffs.o kerr-equatorial-dttcoeffs.o kerr-equatorial.o effsource.o decompose.o $(LDFLAGS) $(LIBS)
@@ -37,5 +68,5 @@ kerr-circular.o : ../kerr-circular.c
 
 .PHONY : clean all
 clean :
-	-rm -rf kerr-equatorial kerr-circular
+	-rm -rf kerr-equatorial kerr-circular sweep-check kerr-equatorial-ctx-ld.c
 	-rm -rf *.o *.dSYM

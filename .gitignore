@@ -1,6 +1,8 @@
 test/*.o
 test/kerr-circular
 test/kerr-equatorial
+test/sweep-check
+test/kerr-equatorial-ctx-ld.c
 *.dat
 .vscode
 __pycache__
