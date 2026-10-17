@@ -18,12 +18,12 @@ point-check : $(POINT_OBJS)
 point-check.o : point-check.c ../effsource_equatorial.h ../effsource_equatorial_point.h
 	$(GCC) $(CFLAGS) -O2 -c -o point-check.o point-check.c
 
-MMODE_OBJS = mmode-check.o kerr-equatorial-mmode.o kerr-equatorial-ctx.o kerr-equatorial-ctx-ld.o kerr-equatorial-point-ctx.o kerr-equatorial-coeffs-ctx.o kerr-equatorial-dtcoeffs-ctx.o kerr-equatorial-dttcoeffs-ctx.o
+MMODE_OBJS = mmode-check.o kerr-equatorial-mmode.o kerr-equatorial-numerical.o kerr-equatorial-ctx.o kerr-equatorial-ctx-ld.o kerr-equatorial-point-ctx.o kerr-equatorial-coeffs-ctx.o kerr-equatorial-dtcoeffs-ctx.o kerr-equatorial-dttcoeffs-ctx.o
 
 mmode-check : $(MMODE_OBJS)
 	$(GCC) $(CFLAGS) -o mmode-check $(MMODE_OBJS) $(LDFLAGS) $(LIBS)
 
-mmode-check.o : mmode-check.c ../effsource_equatorial.h ../effsource_equatorial_point.h ../effsource_equatorial_mmode.h
+mmode-check.o : mmode-check.c ../effsource_equatorial.h ../effsource_equatorial_point.h ../effsource_equatorial_mmode.h ../effsource_equatorial_numerical.h
 	$(GCC) $(CFLAGS) -O2 -c -o mmode-check.o mmode-check.c
 
 kerr-equatorial-mmode.o : ../kerr-equatorial-mmode.c ../effsource_equatorial_mmode.h ../effsource_equatorial_point.h ../effsource_dd.h

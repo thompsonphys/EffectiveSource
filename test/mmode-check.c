@@ -40,6 +40,11 @@
  *      normalised by the largest reference m-mode of each output. Its nodes
  *      2 pi k / n are rounded to double, which biases the small modes by about
  *      1e-16 |f'|, so this comparison is not made mode by mode.
+ *   5. The analytic m-modes and the numerical m-modes of
+ *      effsource_equatorial_ctx_numerical_src_mode, both from the hybrid
+ *      effsource_equatorial_ctx_prepare and with the number of nodes from
+ *      effsource_equatorial_numerical_num_phi, agree to 1e-12 of
+ *      int |src| dphi for C1 < EFFSOURCE_PREPARE_DD_C1 and to 1e-10 above.
  *
  * Errors are grouped by decade of C1. The program also reports the time of the
  * analytic m-modes and of the numerical m-modes with the azimuthal grid of the
@@ -56,6 +61,7 @@
 
 #include "effsource_equatorial.h"
 #include "effsource_equatorial_mmode.h"
+#include "effsource_equatorial_numerical.h"
 #include "effsource_equatorial_point.h"
 
 #define MMAX 20
@@ -69,6 +75,8 @@
 #define MAX_FIELD_MODE_ERROR 1e-13
 #define FIELD_MAX_POINTS (1 << 17)
 #define NUM_FIELDS 3
+#define MAX_NUMERICAL_DD_ERROR 1e-12
+#define MAX_NUMERICAL_DOUBLE_ERROR 1e-10
 
 static const long double pi_long = 3.141592653589793238462643383279502884L;
 
@@ -351,6 +359,39 @@ static void field_errors(const double analytic[NUM_FIELDS][2 * (MMAX + 1)],
   }
 }
 
+/* int |src| dphi of point_src by the trapezoid rule on n points. */
+static double absolute_integral(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
+                                size_t n)
+{
+  double sum = 0.0;
+  for (size_t k = 0; k < n; k++)
+    sum += fabs(effsource_equatorial_ctx_point_src(ctx, point, 2.0 * M_PI * k / n));
+  return sum * 2.0 * M_PI / n;
+}
+
+/* Largest difference between the analytic modes re + i im and the numerical modes of
+   effsource_equatorial_ctx_numerical_src_mode for m = 0..MMAX, relative to int |src| dphi. */
+static double numerical_difference(const struct effsource_equatorial_ctx *ctx,
+                                   const struct effsource_equatorial_point *point, const double *re, const double *im)
+{
+  const double C1 = effsource_equatorial_point_C1(ctx, point);
+  const double absolute = absolute_integral(ctx, point, effsource_equatorial_numerical_num_phi(C1, MMAX));
+  double worst = 0.0;
+  for (int m = 0; m <= MMAX; m++) {
+    const size_t n = effsource_equatorial_numerical_num_phi(C1, m);
+    struct effsource_equatorial_numerical_table table;
+    double numerical_re, numerical_im;
+    if (n == 0 || effsource_equatorial_numerical_table_init(&table, m, n))
+      return INFINITY;
+    const int status = effsource_equatorial_ctx_numerical_src_mode(ctx, point, &table, n, &numerical_re, &numerical_im);
+    effsource_equatorial_numerical_table_free(&table);
+    if (status)
+      return INFINITY;
+    worst = fmax(worst, cabs((re[m] - numerical_re) + I * (im[m] - numerical_im)) / absolute);
+  }
+  return worst;
+}
+
 /* Time per call of the numerical m-modes with the Auto grid, as EccentricOrbit computes them. */
 static double numerical_time(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
                              int n, double complex *sink)
@@ -432,6 +473,7 @@ int main(int argc, char **argv)
   double mode_worst[NUM_DECADES] = {0}, src_analytic[NUM_DECADES] = {0}, src_numerical[NUM_DECADES] = {0};
   double time_analytic[NUM_DECADES] = {0}, time_numerical[NUM_DECADES] = {0}, time_prepare[NUM_DECADES] = {0};
   double time_fields[NUM_DECADES] = {0};
+  double numerical_error[NUM_DECADES] = {0}, worst_numerical_ratio = 0.0;
   double field_global_dd[NUM_DECADES][NUM_FIELDS] = {{0}}, field_mode_dd[NUM_DECADES][NUM_FIELDS] = {{0}};
   double field_global[NUM_DECADES][NUM_FIELDS] = {{0}}, field_mode[NUM_DECADES][NUM_FIELDS] = {{0}};
   int count[NUM_DECADES] = {0}, count_reference[NUM_DECADES] = {0}, count_fourier[NUM_DECADES] = {0};
@@ -490,6 +532,13 @@ int main(int argc, char **argv)
         effsource_equatorial_ctx_analytic_modes(ctx, &point, MMAX, src_modes, fields[0], fields[1], fields[2]);
       time_fields[decade] += (now() - start) / repeats;
       time_numerical[decade] += numerical_time(ctx, &point, auto_points(C1, MMAX), sink);
+      {
+        const double difference = numerical_difference(ctx, &point, re, im);
+        const double tolerance = effsource_equatorial_point_C1(ctx, &point) < EFFSOURCE_PREPARE_DD_C1
+                                 ? MAX_NUMERICAL_DD_ERROR : MAX_NUMERICAL_DOUBLE_ERROR;
+        numerical_error[decade] = fmax(numerical_error[decade], difference);
+        worst_numerical_ratio = fmax(worst_numerical_ratio, isnan(difference) ? INFINITY : difference / tolerance);
+      }
 
       if (n <= (1 << 15)) {
         long double complex reference[MMAX + 1], hybrid_numerical[MMAX + 1];
@@ -575,6 +624,12 @@ int main(int argc, char **argv)
       worst_field_mode = fmax(worst_field_mode, field_mode_dd[d][f]);
     }
   }
+  printf("\nanalytic vs effsource_equatorial_ctx_numerical_src_mode, hybrid prepare, m <= %d, relative to int |src| dphi\n",
+         MMAX);
+  for (int d = 0; d < NUM_DECADES; d++)
+    if (count[d])
+      printf("  1e-%-2d  %3d   %9.1e\n", d, count[d], numerical_error[d]);
+  all_pass &= check("analytic_vs_numerical", worst_numerical_ratio <= 1.0, worst_numerical_ratio);
   all_pass &= check("field_modes", worst_field <= MAX_FIELD_ERROR, worst_field);
   all_pass &= check("field_modes_per_mode", worst_field_mode <= MAX_FIELD_MODE_ERROR, worst_field_mode);
   if (creal(sink[0]) == 1.2345)
