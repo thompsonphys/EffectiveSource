@@ -6,7 +6,7 @@ LIBS = -lm -lgsl -lgslcblas
 
 DEPS    = ../effsource.h
 
-all : kerr-equatorial kerr-circular point-check
+all : kerr-equatorial kerr-circular point-check numerical-check
 
 PYTHON = python3
 
@@ -17,6 +17,17 @@ point-check : $(POINT_OBJS)
 
 point-check.o : point-check.c ../effsource_equatorial.h ../effsource_equatorial_point.h
 	$(GCC) $(CFLAGS) -O2 -c -o point-check.o point-check.c
+
+NUMERICAL_OBJS = numerical-check.o kerr-equatorial-numerical.o kerr-equatorial-ctx.o kerr-equatorial-ctx-ld.o kerr-equatorial-point-ctx.o kerr-equatorial-coeffs-ctx.o kerr-equatorial-dtcoeffs-ctx.o kerr-equatorial-dttcoeffs-ctx.o
+
+numerical-check : $(NUMERICAL_OBJS)
+	$(GCC) $(CFLAGS) -o numerical-check $(NUMERICAL_OBJS) $(LDFLAGS) $(LIBS)
+
+numerical-check.o : numerical-check.c ../effsource_equatorial.h ../effsource_equatorial_point.h ../effsource_equatorial_numerical.h
+	$(GCC) $(CFLAGS) -O2 -c -o numerical-check.o numerical-check.c
+
+kerr-equatorial-numerical.o : ../kerr-equatorial-numerical.c ../effsource_equatorial_numerical.h ../effsource_equatorial_point.h ../effsource_equatorial.h
+	$(GCC) $(CFLAGS) -O2 -c -o kerr-equatorial-numerical.o ../kerr-equatorial-numerical.c
 
 kerr-equatorial-ctx.o : ../kerr-equatorial-ctx.c ../effsource_equatorial.h
 	$(GCC) $(CFLAGS) -O2 -c -o kerr-equatorial-ctx.o ../kerr-equatorial-ctx.c
@@ -68,5 +79,5 @@ kerr-circular.o : ../kerr-circular.c
 
 .PHONY : clean all
 clean :
-	-rm -rf kerr-equatorial kerr-circular point-check kerr-equatorial-ctx-ld.c
+	-rm -rf kerr-equatorial kerr-circular point-check numerical-check kerr-equatorial-ctx-ld.c
 	-rm -rf *.o *.dSYM
