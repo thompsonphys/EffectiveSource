@@ -1,0 +1,1114 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{float}
+\usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}
+
+\newcommand{\ii}{\mathrm{i}}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\PhiS}{\Phi^{\mathrm{S}}}
+\newcommand{\Kmn}[2]{K_{#1}^{(#2)}}
+\newcommand{\codeus}{\textunderscore\allowbreak}
+\newcommand{\codehy}{-\allowbreak}
+\newcommand{\code}[1]{{\ttfamily\let\_\codeus\let\-\codehy #1}}
+\emergencystretch=2em
+
+\title{Analytic azimuthal modes of the equatorial effective source}
+\author{EffectiveSource project notes}
+\date{2026-10-17}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We describe a method to compute the azimuthal Fourier modes of the effective
+source of a scalar charge on an equatorial Kerr geodesic, together with the
+modes of the singular field and of its first spatial derivatives, without any
+quadrature in the azimuth. At a fixed field point and particle position, each of
+these quantities can be written as a single fraction: an even polynomial in
+$u=\sin^2(\psi/2)$ plus $\sin\psi$ times another polynomial, divided by a fixed
+half-integer power of the quadratic distance $s^2=\alpha+\beta u$, where $\psi$
+is the shifted azimuthal separation from the particle. The azimuthal integral of
+such a fraction is a finite linear combination of the kernels
+$\int_0^{2\pi}\cos(\mu\psi)\,(\alpha+\beta\sin^2\tfrac{\psi}{2})^{-\nu}\,\dd\psi$,
+which follow from two complete elliptic integrals and two three-term
+recurrences. Near the particle the numerator coefficients are the small
+remainder of large cancelling terms, and we compute them, the kernels and the
+contractions in double-double arithmetic where this cancellation requires it.
+Part~\ref{part:theory} develops the method and Part~\ref{part:implementation}
+describes its implementation, its tests and its run time. The modes agree with
+high-precision quadrature of the same functions to better than $10^{-13}$
+relative to each mode.
+\end{abstract}
+
+\tableofcontents
+
+\part{Theory}
+\label{part:theory}
+
+\section{Introduction}
+\label{sec:intro}
+
+In the effective-source approach to the self-force, the retarded field of a
+point charge is split into a singular field $\PhiS$, known in closed form near
+the worldline, and a regular remainder. The remainder satisfies the wave
+equation with the effective source $S=-\Box\PhiS$, which is bounded at the
+particle and can be handled by a standard field solver. For a particle on an
+equatorial orbit of a Kerr black hole, the background is stationary and
+axisymmetric, and it is natural to decompose every field into azimuthal modes
+\begin{equation}
+  \label{eq:mode}
+  f_m(r,\theta) = \int_0^{2\pi} f(r,\theta,\phi)\, e^{-\ii m\phi}\,\dd\phi ,
+\end{equation}
+evaluated at fixed time $t$. A frequency-domain solver needs $S_m$ at every
+point of its grid and, for eccentric orbits, at many times along the orbit. On
+the boundary of the region where the effective source is used, it also needs
+the modes of $\PhiS$, $\partial_r\PhiS$ and $\partial_\theta\PhiS$.
+
+The integrand of Eq.~\eqref{eq:mode} is sharply peaked in $\phi$ when the field
+point is close to the orbit, and the peak narrows as the field point approaches
+the particle. A quadrature rule in $\phi$ must resolve the peak, and the number
+of nodes it needs grows without bound as the separation decreases. A second
+difficulty is cancellation. The source is bounded at the particle, but it is
+the sum of second derivatives of $\PhiS$, each of which grows like the inverse
+cube of the distance. Any method that integrates these terms separately and
+adds the results has its relative error amplified by the ratio of the terms to
+their sum.
+
+This note describes a method that avoids both problems. We first show that, at
+a fixed field point, every quantity we need is a single rational function of
+the azimuth with a fixed denominator, in which all the cancellation between the
+singular terms has already taken place in a small set of numerator
+coefficients (Sec.~\ref{sec:rational}). We then show that the azimuthal
+integral of such a function is a short linear combination of one family of
+kernels (Sec.~\ref{sec:integration}), and that these kernels can be computed
+to full precision from elliptic integrals and recurrences
+(Sec.~\ref{sec:kernels}). Section~\ref{sec:precision} discusses the precision
+that each step requires. We begin with the form of the singular field and the
+source in Sec.~\ref{sec:field}.
+
+\section{The singular field and the effective source}
+\label{sec:field}
+
+\subsection{Local coordinates and the distance function}
+
+We use Boyer--Lindquist coordinates $(t,r,\theta,\phi)$ and place the particle
+at $(r_p,\pi/2,\phi_p)$ at time $t$. The separations of the field point from
+the particle are $\delta r=r-r_p$, $\delta\theta=\theta-\pi/2$ and
+$\delta\phi=\phi-\phi_p$. The singular field is written in terms of a shifted
+azimuthal separation and its half-angle sine,
+\begin{equation}
+  \label{eq:psi}
+  \psi = \delta\phi - c\,\delta r, \qquad \sigma=\sin\frac{\psi}{2}, \qquad u=\sigma^2,
+\end{equation}
+where the constant $c$ depends on the state of the particle. The singular field
+depends on the azimuth only through $u$ and $\sin\psi$. Both are
+$2\pi$-periodic in $\phi$, as a field must be, and near the particle they agree
+with $\psi^2/4$ and $\psi$.
+
+The building block of the singular field is the quadratic distance function
+\begin{equation}
+  \label{eq:s2}
+  s^2 = \alpha + \beta u, \qquad \alpha = \alpha_{20}\,\delta r^2 + \alpha_{02}\,\delta\theta^2,
+\end{equation}
+where $\alpha_{20}$, $\alpha_{02}$ and $\beta$ are positive constants that,
+like $c$, depend only on the state of the particle. At leading order $s^2$ is
+the squared distance from the particle in the local metric. For a given field
+point $(r,\theta)$, the quantity $\alpha$ is the smallest value of $s^2$ over
+all azimuths, reached at $\psi=0$. We measure the separation of the field point
+from the particle by the dimensionless ratio
+\begin{equation}
+  \label{eq:C1}
+  C_1 = \frac{\alpha}{\beta},
+\end{equation}
+which vanishes only on the orbit, $\delta r=\delta\theta=0$. Near $\psi=0$ we
+have $s^2\approx\alpha+\beta\psi^2/4$, so the azimuthal width of the peak of
+any power of $s^{-2}$ is about $2\sqrt{C_1}$.
+
+\subsection{The singular field}
+
+The singular field is the ratio of a polynomial to the seventh power of $s$,
+\begin{equation}
+  \label{eq:puncture}
+  \PhiS = \frac{A}{s^7}, \qquad
+  A = \sum_{ijk} A_{ijk0}\,\delta r^i\,\delta\theta^j\,\sigma^k
+    + \sin\psi\sum_{ijk} A_{ijk1}\,\delta r^i\,\delta\theta^j\,\sigma^k .
+\end{equation}
+The coefficients $A_{ijkl}$ depend only on the state of the particle. Only even
+powers $j$ of $\delta\theta$ appear, because the problem is symmetric under
+reflection through the equatorial plane, and only even powers $k$ of $\sigma$.
+Odd behaviour in $\psi$ enters through one overall factor of $\sin\psi$. Every term
+has total degree $6\le i+j+k+l\le9$, counting $\sin\psi$ as degree one, and
+there are 85 coefficients in total. Since $A$ is at least of degree six and
+$s^7$ is of degree seven, the singular field behaves like $1/s$ at leading
+order, as the field of a point charge must. The higher-degree terms are the
+corrections that make the effective source bounded.
+
+For an eccentric orbit the particle moves, and the coefficients $A_{ijkl}$,
+$\alpha_{20}$, $\alpha_{02}$, $\beta$ and $c$ change along the orbit. The time
+derivatives of the singular field therefore also require their first and second
+derivatives along the orbit, $\dot A_{ijkl}$ and $\ddot A_{ijkl}$, and those of
+the other constants, together with the velocity and acceleration of the
+particle. We refer to all of these numbers as the particle data.
+
+\subsection{Derivatives of the singular field}
+
+The singular field depends on $t$, $r$ and $\phi$ through $\delta r$, through
+$\psi$ and through the time dependence of the particle data, and on $\theta$
+only through $\delta\theta$. The dependence through $\psi$ follows from
+Eq.~\eqref{eq:psi},
+\begin{equation}
+  \label{eq:dpsi}
+  \partial_\phi\psi=1, \qquad \partial_r\psi=-c, \qquad
+  \partial_t\psi = c\,\dot r_p - \dot c\,\delta r - \dot\phi_p ,
+\end{equation}
+and the derivatives of $\sigma$ and $\sin\psi$ follow by the chain rule, for
+example $\partial_r\sigma=-\tfrac{c}{2}\cos(\psi/2)$. Differentiating
+Eq.~\eqref{eq:puncture} gives, for any coordinates $X$ and $Y$,
+\begin{align}
+  \partial_X\PhiS &= \frac{2s^2\,\partial_X A - 7A\,\partial_X s^2}{2s^9}, \label{eq:first}\\
+  \partial_X\partial_Y\PhiS &= \frac{63A\,\partial_X s^2\,\partial_Y s^2
+    - 14s^2\bigl(\partial_X A\,\partial_Y s^2 + \partial_Y A\,\partial_X s^2 + A\,\partial_X\partial_Y s^2\bigr)
+    + 4s^4\,\partial_X\partial_Y A}{4s^{11}}, \label{eq:second}
+\end{align}
+where every derivative is a total derivative that includes the dependence
+through $\psi$. Each derivative lowers the power of $s$ by two. The numerators
+are polynomials in the separations, in $\sigma$, $\cos(\psi/2)$ and $\sin\psi$,
+and in the particle data.
+
+\subsection{The effective source}
+
+The effective source is the scalar wave operator of the Kerr metric applied to
+the singular field. In Boyer--Lindquist coordinates it takes the form
+\begin{equation}
+  \label{eq:source}
+  S = -\Box\PhiS = \sum_X b_X(r,\theta)\,\partial_X\PhiS
+    + \sum_{X,Y} b_{XY}(r,\theta)\,\partial_X\partial_Y\PhiS,
+\end{equation}
+where the first sum runs over $\partial_r$ and $\partial_\theta$ and the second
+over $\partial_r^2$, $\partial_\theta^2$, $\partial_t^2$, $\partial_t\partial_\phi$
+and $\partial_\phi^2$. The operator coefficients $b_X$ and $b_{XY}$ depend on
+the field point only, because the background is stationary and axisymmetric.
+
+Equation~\eqref{eq:second} shows that each term of Eq.~\eqref{eq:source}
+grows like $s^{-3}$ near the particle. The singular field is constructed so
+that these terms cancel to the order of the expansion, and their sum is
+bounded. The size of the individual terms relative to the sum is the origin of
+the cancellation discussed in the introduction.
+
+\subsection{Quadrature in the azimuth}
+\label{sec:direct}
+
+The integrand of Eq.~\eqref{eq:mode} is analytic in $\phi$, with singularities
+in the complex plane where $s^2$ vanishes. Setting $\alpha+\beta\sin^2(\psi/2)=0$
+gives $\psi=\pm2\ii\,\mathrm{arsinh}\sqrt{C_1}$, so the singularities lie a
+distance of about $2\sqrt{C_1}$ from the real axis. The trapezoidal rule with
+$N$ nodes then has an error that decreases like
+$\exp(-2N\,\mathrm{arsinh}\sqrt{C_1})$, and reaching a relative error of
+$10^{-14}$ requires $N\approx16/\sqrt{C_1}$ nodes, about $5\times10^5$ at
+$C_1=10^{-9}$. The same distance sets the decay of the modes with $m$, which we
+meet again in Sec.~\ref{sec:mu}. Quadrature also leaves the cancellation in
+the source untouched, since the integrand at each node is the sum of
+Eq.~\eqref{eq:source}.
+
+\subsection{Term-by-term closed forms}
+\label{sec:termwise}
+
+An earlier approach avoids quadrature by integrating each term of the singular
+field in closed form and by obtaining the derivatives and the source from these
+closed forms. We describe it in some detail, because the ways in which it fails
+in double precision motivate each step of the method of
+Secs.~\ref{sec:rational}--\ref{sec:precision}.
+
+\paragraph{Construction.} The polynomial $A$ of Eq.~\eqref{eq:puncture} is
+first written as
+\begin{equation}
+  \label{eq:A_split}
+  A = \sum_{j=0}^{4}\bigl(R_j + \sin\psi\,I_j\bigr)\,\sigma^{2j},
+\end{equation}
+where the ten coefficients $R_j$ and $I_j$ are polynomials in $\delta r$ and
+$\delta\theta$. The mode of the singular field then requires the integrals
+\begin{equation}
+  \label{eq:old_integrals}
+  c_{mj} = \int_0^{2\pi}\frac{\cos(m\psi)\,\sigma^{2j}}{s^7}\,\dd\psi, \qquad
+  d_{mj} = \int_0^{2\pi}\frac{\sin(m\psi)\,\sin\psi\;\sigma^{2j}}{s^7}\,\dd\psi,
+\end{equation}
+in terms of which
+$(\PhiS)_m = e^{-\ii m\phi_0}\sum_j\bigl(R_j\,c_{mj} - \ii\,I_j\,d_{mj}\bigr)$,
+with the constant $\phi_0=\phi_p+c\,\delta r$. Each integral has a closed form
+in the complete elliptic integrals $K(k)$ and $E(k)$ with
+$k^2=\beta/(\alpha+\beta)=1/(1+C_1)$,
+\begin{equation}
+  \label{eq:old_closed}
+  c_{mj} = \frac{4\bigl[p_{mj}(C_1)\,K(k) + q_{mj}(C_1)\,E(k)\bigr]}{\beta^{7/2}\,C_1^3\,(1+C_1)^{5/2}},
+\end{equation}
+where $p_{mj}$ and $q_{mj}$ are polynomials of degree up to $m+2+j$ with
+rational coefficients. The integrals $d_{mj}$ have the same form, with a
+denominator proportional to $C_1^2(1+C_1)^{3/2}$. The polynomials are derived
+once by computer algebra and tabulated for each $m$.
+
+The modes of the derivatives follow from the closed forms. At fixed $\phi$ the
+azimuthal integral commutes with $\partial_t$, $\partial_r$ and
+$\partial_\theta$, so $(\partial_X\PhiS)_m=\partial_X(\PhiS)_m$ for these
+coordinates, and $(\partial_\phi\PhiS)_m=\ii m\,(\PhiS)_m$. The closed form
+depends on $(t,r,\theta)$ through $R_j$ and $I_j$, through $C_1$, which enters
+$K$, $E$, the polynomials and the denominators, and through the phase
+$e^{-\ii m\phi_0}$. The chain rule uses
+\begin{equation}
+  \label{eq:dKdC}
+  \frac{\dd K}{\dd C_1} = \frac{C_1K-(1+C_1)E}{2C_1(1+C_1)}, \qquad
+  \frac{\dd E}{\dd C_1} = \frac{K-E}{2(1+C_1)},
+\end{equation}
+and their derivatives, and the modes of the second derivatives follow by
+differentiating once more. The mode of the source is finally obtained by
+applying Eq.~\eqref{eq:source} to these modes, with $\partial_\phi$ replaced
+by $\ii m$.
+
+For the singular field, this route and the method of
+Secs.~\ref{sec:rational}--\ref{sec:kernels} compute the same integrals. The
+kernels of Sec.~\ref{sec:integration} are themselves combinations of $K$ and
+$E$ with coefficients rational in $C_1$, generated by the recurrences of
+Sec.~\ref{sec:kernels}, so Eq.~\eqref{eq:old_closed} and the contractions of
+Sec.~\ref{sec:integration} are two ways of writing the same exact result. The
+same holds for the first derivatives of the singular field. Because the
+azimuthal integral commutes with the derivatives, differentiating the closed
+forms after the projection gives the same modes as differentiating the singular
+field before it, as in Sec.~\ref{sec:fields}. The two routes differ in how the
+exact expressions are evaluated in floating point and in how the source is
+assembled, and in double precision the term-by-term route fails in three
+ways.
+
+\paragraph{Cancellation at large separation and high $m$.} The closed form of
+mode $m$ is, algebraically, what the recurrence in $\mu$ of Sec.~\ref{sec:mu}
+produces when it is applied $m$ times to $K$ and $E$. Its polynomials grow
+rapidly with $m$, and the largest tabulated coefficient is about $9$ for
+$m=0$, $4\times10^2$ for $m=2$, $4\times10^9$ for $m=10$ and $5\times10^{17}$
+for $m=20$. The mode itself decreases like $\rho^{-m}$, with $\rho$ given by
+Eq.~\eqref{eq:rho}. The terms of the closed form therefore cancel, and the
+rounding errors of $K$, $E$ and the coefficients are amplified by roughly
+$\rho^{2m}$, the same factor as for the forward recurrence. At $C_1=1$, where
+$\rho\approx5.8$, this factor exceeds $10^{16}$ for $m\ge11$, and the high modes
+have no correct digits.
+
+\paragraph{The elliptic integrals near $k=1$.} Near the particle $k\to1$. If $K$
+and $E$ are computed from $k^2=1/(1+C_1)$, the rounding of $k^2$ gives the small
+complement $1-k^2\approx C_1$ a relative error of order $\epsilon/C_1$, where
+$\epsilon\approx10^{-16}$ is the unit roundoff. Since
+$K(k)\approx\tfrac12\ln\bigl(16/(1-k^2)\bigr)$, the absolute error of $K$ is
+about $\epsilon/(2C_1)$, which limits the modes of $\PhiS$ to a relative
+accuracy of about $10^{-10}$ at $C_1=10^{-8}$. Computing $K$ and $E$ from the
+complementary parameter, as in Sec.~\ref{sec:kernels}, removes this error.
+
+\paragraph{Cancellation in the source.} The modes of the second derivatives
+grow like $1/C_1$ near the particle, while the mode of the source remains
+finite. Near $\psi=0$ the azimuthal integral of $s^{-3}$ is
+$\int(\alpha+\beta\psi^2/4)^{-3/2}\,\dd\psi=4/(\alpha\sqrt\beta)$, which sets
+this scaling. When the source is assembled from these modes by
+Eq.~\eqref{eq:source}, the separately projected terms cancel to the same
+degree, so the relative error of $S_m$ grows like $1/C_1$ as the field point
+approaches the particle, however $K$ and $E$ are evaluated. The singular field
+and its first derivatives involve no such cancellation, and their modes from the
+differentiated closed forms are as accurate as those of $\PhiS$ itself.
+
+In addition, the tables limit the construction to the modes for which closed
+forms were derived, and extending them to higher $m$ increases the
+cancellation of the first kind. Section~\ref{sec:old} quantifies each of these
+errors.
+
+The method of Secs.~\ref{sec:rational}--\ref{sec:precision} addresses each
+failure. It combines the terms of the source before the azimuthal integration,
+so that the cancellation of the third kind takes place in a small number of
+numerator coefficients that can be computed in higher precision. It computes
+the kernels by the recurrence in the direction in which that recurrence is
+stable, or in a basis in which the high modes do not cancel, which avoids the
+first kind. It evaluates $K$ and $E$ from the complementary parameter, which
+avoids the second, and its kernels are available to high $m$ without
+tabulation.
+
+\section{A single fraction for each quantity}
+\label{sec:rational}
+
+\subsection{Dependence on the azimuth at a fixed field point}
+
+The method rests on the observation that, at a fixed field point $(r,\theta)$
+and a fixed particle position, all the quantities of Sec.~\ref{sec:field}
+depend on the azimuth only through $\psi$, and only through the three
+functions $\sigma$, $\cos(\psi/2)$ and $\sin\psi$. The separations $\delta r$
+and $\delta\theta$, the particle data and the operator coefficients are
+constants for the azimuthal integral.
+
+Each polynomial that appears in Eqs.~\eqref{eq:first} and \eqref{eq:second},
+namely $A$ and its partial derivatives with respect to $\delta r$,
+$\delta\theta$, $\sigma$, $\sin\psi$ and $t$, can therefore be collected as
+\begin{equation}
+  \label{eq:collect}
+  \sum_k a_k\,\sigma^k + \sin\psi\sum_k b_k\,\sigma^k ,
+\end{equation}
+where the coefficients $a_k$ and $b_k$ are polynomials in $\delta r$ and
+$\delta\theta$. Every such polynomial is at most linear in $\sin\psi$, because
+$A$ is. For later use we write the two parts of Eq.~\eqref{eq:collect} as
+$X^{(0)}(u)$ and $X^{(1)}(u)$, so that a polynomial reads
+$X^{(0)}(u)+\sin\psi\,X^{(1)}(u)$. Where the powers of $\sigma$ are all odd,
+as for $\partial_\sigma A$, we take the common factor $\sigma$ out of both
+parts.
+
+\subsection{Clearing the denominators of the source}
+\label{sec:clear}
+
+Equations~\eqref{eq:first} and \eqref{eq:second} have denominators $s^9$ and
+$s^{11}$, and the source contains derivatives up to second order. Multiplying
+the source by $s^{11}$ therefore removes every denominator,
+\begin{equation}
+  \label{eq:numerator}
+  \begin{split}
+  N \equiv s^{11}S ={}& \sum_X b_X\,s^2\Bigl(s^2\,\partial_X A - \tfrac72A\,\partial_X s^2\Bigr) \\
+    &+ \sum_{X,Y}\frac{b_{XY}}{4}\Bigl[63A\,\partial_X s^2\,\partial_Y s^2
+    - 14s^2\bigl(\cdots\bigr) + 4s^4\,\partial_X\partial_Y A\Bigr],
+  \end{split}
+\end{equation}
+where the bracket $(\cdots)$ is that of Eq.~\eqref{eq:second}. With
+$\sin\psi=2\sigma\cos(\psi/2)$ and $\cos\psi=1-2u$, the numerator $N$ is a
+polynomial in $\sigma$, $\cos(\psi/2)$ and $s^2$, and it is linear in the
+coefficients $a_k$ and $b_k$ of the polynomials of Eq.~\eqref{eq:collect}.
+
+Two identities reduce $N$ further. First, $s^2=\alpha+\beta u$ is itself a
+polynomial in $u$. Second, $\cos^2(\psi/2)=1-u$, so every even power of
+$\cos(\psi/2)$ is also a polynomial in $u$. After these substitutions each
+monomial of $N$ is $\sigma^a\cos^b(\psi/2)$ with $b$ equal to zero or one.
+
+The parity of the remaining monomials is fixed by periodicity. Both $\sigma$
+and $\cos(\psi/2)$ change sign when $\psi$ increases by $2\pi$, while $N$ is
+$2\pi$-periodic, so $a+b$ is even in every monomial. If $b=0$, then $a$ is
+even and the monomial is a power of $u$. If $b=1$, then $a$ is odd and the
+monomial is $\sigma\cos(\psi/2)=\tfrac12\sin\psi$ times a power of $u$. The
+numerator therefore takes the form
+\begin{equation}
+  \label{eq:PQ}
+  N = P(u) + \tfrac12\sin\psi\;Q(u), \qquad
+  P(u) = \sum_{j=0}^{7} P_j\,u^j, \qquad Q(u) = \sum_{j=0}^{6} Q_j\,u^j ,
+\end{equation}
+in which $P(u)$ is even in $\psi$ and $\tfrac12\sin\psi\,Q(u)$ is odd. The
+effective source is
+\begin{equation}
+  \label{eq:rational}
+  S = \frac{P(u) + \tfrac12\sin\psi\;Q(u)}{s^{11}} .
+\end{equation}
+
+Each coefficient $P_j$ and $Q_j$ is a linear combination of the coefficients
+$a_k$ and $b_k$, with weights that depend on $\alpha$, $\beta$, $c$, the other
+particle data and the operator coefficients $b_X$ and $b_{XY}$. The weights
+are independent of $\psi$. All the cancellation between the singular terms of
+Eq.~\eqref{eq:source} now takes place inside the 15 numbers $P_j$ and $Q_j$,
+which are computed once per field point. The azimuthal dependence is contained
+in Eq.~\eqref{eq:rational}, a smooth function of $\psi$ whose azimuthal
+integral has a closed form.
+
+\subsection{The singular field and its first derivatives}
+\label{sec:fields}
+
+The other quantities have the same structure, with a different power of $s$ in
+the denominator. The singular field itself is
+\begin{equation}
+  \label{eq:PhiS_numerator}
+  \PhiS = \frac{A^{(0)}(u) + \tfrac12\sin\psi\,\bigl[2A^{(1)}(u)\bigr]}{s^7}.
+\end{equation}
+The $\theta$ derivative follows from Eq.~\eqref{eq:first} with
+$\partial_\theta s^2 = 2\alpha_{02}\,\delta\theta$,
+\begin{equation}
+  \label{eq:dth_numerator}
+  \partial_\theta\PhiS = \frac{s^2\,\partial_{\delta\theta}A - 7\alpha_{02}\,\delta\theta\,A}{s^9},
+\end{equation}
+where $\partial_{\delta\theta}A$ is collected in the form of
+Eq.~\eqref{eq:collect}.
+
+The $r$ derivative needs more care, because $\psi$ depends on $r$ through
+Eq.~\eqref{eq:psi}. The total derivatives of $A$ and $s^2$ with respect to
+$r$ are
+\begin{equation}
+  \label{eq:total_r}
+  D_rA = \partial_{\delta r}A + \partial_\sigma A\,\partial_r\sigma + \partial_{\sin\psi}A\,\partial_r\sin\psi,
+  \qquad
+  D_r s^2 = 2\alpha_{20}\,\delta r - \tfrac12 c\beta\sin\psi,
+\end{equation}
+with $\partial_r\sigma=-\tfrac{c}{2}\cos(\psi/2)$ and
+$\partial_r\sin\psi=-c\cos\psi=-c(1-2u)$. Inserting the collected forms and
+using $\sigma^2\cos^2(\psi/2)=u(1-u)$ gives
+$D_rA = D_{\rm e}(u) + \tfrac12\sin\psi\,D_{\rm o}(u)$ with
+\begin{align}
+  D_{\rm e} &= (\partial_{\delta r}A)^{(0)} - c\,u(1-u)\,(\partial_\sigma A)^{(1)} - c(1-2u)\,(\partial_{\sin\psi}A)^{(0)}, \label{eq:De}\\
+  D_{\rm o} &= 2(\partial_{\delta r}A)^{(1)} - \tfrac12 c\,(\partial_\sigma A)^{(0)}, \label{eq:Do}
+\end{align}
+where the parts of $\partial_\sigma A$ are taken without their common factor of
+$\sigma$. The $r$ derivative of the singular field is then
+\begin{equation}
+  \label{eq:dr_numerator}
+  \partial_r\PhiS = \frac{s^2\,D_rA - \tfrac72 A\,D_r s^2}{s^9}.
+\end{equation}
+When the numerator is expanded, the product of the two odd factors
+$\sin\psi$ in $A\,D_rs^2$ becomes $\sin^2\psi=4u(1-u)$, so the numerator again
+has the form of Eq.~\eqref{eq:PQ}.
+
+\subsection{The common form}
+
+All four quantities therefore have the form
+\begin{equation}
+  \label{eq:general}
+  f = \frac{P(u) + \tfrac12\sin\psi\;Q(u)}{(\alpha+\beta u)^{\nu}}, \qquad
+  \nu=\tfrac{11}{2}\ \text{for}\ S,\quad \nu=\tfrac72\ \text{for}\ \PhiS,\quad
+  \nu=\tfrac92\ \text{for}\ \partial_r\PhiS\ \text{and}\ \partial_\theta\PhiS,
+\end{equation}
+with at most eight coefficients in $P$ and seven in $Q$. The remainder of
+Part~\ref{part:theory} computes the azimuthal modes of a function of this
+form.
+
+\section{Azimuthal integration}
+\label{sec:integration}
+
+\subsection{Phase and parity}
+
+At a fixed field point, Eq.~\eqref{eq:psi} gives $\phi=\phi_0+\psi$ with the
+constant $\phi_0=\phi_p+c\,\delta r$. Because $f$ is $2\pi$-periodic in $\psi$,
+we can integrate over $\psi$ instead of $\phi$ and write
+$e^{-\ii m\phi}=e^{-\ii m\phi_0}\bigl[\cos(m\psi)-\ii\sin(m\psi)\bigr]$. The
+even part of $f$ contributes only with $\cos(m\psi)$ and the odd part only with
+$\sin(m\psi)$, so
+\begin{equation}
+  \label{eq:phase}
+  f_m = e^{-\ii m\phi_0}\bigl(E_m - \ii\,O_m\bigr),
+\end{equation}
+with the real integrals
+\begin{equation}
+  \label{eq:even_odd}
+  E_m = \int_0^{2\pi}\frac{\cos(m\psi)\,P(u)}{s^{2\nu}}\,\dd\psi, \qquad
+  O_m = \frac12\int_0^{2\pi}\frac{\sin(m\psi)\,\sin\psi\;Q(u)}{s^{2\nu}}\,\dd\psi .
+\end{equation}
+Since $f$ is real, the mode $-m$ is the complex conjugate of the mode $m$, and
+we only need $m\ge0$.
+
+\subsection{The kernels}
+
+Both integrals can be reduced to the family of kernels
+\begin{equation}
+  \label{eq:kernel}
+  \Kmn{\mu}{\nu}(\alpha,\beta) = \int_0^{2\pi}\frac{\cos(\mu\psi)}{(\alpha+\beta\sin^2\frac{\psi}{2})^{\nu}}\,\dd\psi
+  = \int_0^{2\pi}\frac{\cos(\mu\psi)}{(A_0 - B_0\cos\psi)^{\nu}}\,\dd\psi,
+\end{equation}
+for integer $\mu\ge0$ and half-integer $\nu$, where the second form uses
+$\sin^2(\psi/2)=(1-\cos\psi)/2$ with $A_0=\alpha+\beta/2$ and $B_0=\beta/2$.
+The kernels are the azimuthal modes of a single power of the distance function.
+For positive $\nu$ they are positive and decrease with $\mu$, as the binomial
+expansion of $(1-x\cos\psi)^{-\nu}$ in powers of $\cos\psi$ shows. Their
+evaluation is the subject of Sec.~\ref{sec:kernels}.
+
+To reduce Eq.~\eqref{eq:even_odd} to kernels, the polynomials $P$ and $Q$ must
+be expressed in a basis whose products with $\cos(m\psi)$ or
+$\sin(m\psi)\sin\psi$ integrate to kernels. There are two natural choices.
+Both are exact, and they differ in which kernels they need and in how
+rounding errors propagate.
+
+\subsection{The \texorpdfstring{$s^2$}{s squared} basis}
+
+The substitution $u=(s^2-\alpha)/\beta$ writes $P$ as a polynomial in $s^2$,
+\begin{equation}
+  \label{eq:s2basis}
+  P(u) = \sum_k e_k\,s^{2k}, \qquad\text{so that}\qquad E_m = \sum_k e_k\,\Kmn{m}{\nu-k}.
+\end{equation}
+Each power $s^{2k}$ lowers the effective exponent of the denominator from $\nu$
+to $\nu-k$. The coefficients $e_k$ follow from the $P_j$ by scaling the
+coefficient of $u^j$ by $\beta^{-j}$ and then shifting the argument of the
+polynomial by $-\alpha$.
+
+The odd integral needs one more step, because $\sin(m\psi)\sin\psi$ is not a
+cosine. We use the identity
+\begin{equation}
+  \label{eq:chebyshev}
+  \frac{\sin(m\psi)}{\sin\psi}=\sum_{l=0}^{m-1}\cos\bigl((m-1-2l)\psi\bigr)
+\end{equation}
+and write the remaining factor as
+$\tfrac12\sin^2\psi\,Q(u) = 2u(1-u)Q(u)\equiv G(u)$, a polynomial of two
+degrees higher than $Q$. With $G(u)=\sum_k g_k\,s^{2k}$,
+\begin{equation}
+  \label{eq:odd_s2}
+  O_m = \sum_k g_k\,L_m^{(\nu-k)}, \qquad
+  L_m^{(\nu)} = \sum_{l=0}^{m-1}\Kmn{|m-1-2l|}{\nu} .
+\end{equation}
+The partial sums $L_m$ need not be formed term by term. They satisfy
+$L_0=0$, $L_1=\Kmn{0}{\nu}$ and $L_m=L_{m-2}+2\Kmn{m-1}{\nu}$.
+
+For the source, $P$ has degree seven and $G$ degree eight, so the $s^2$ basis
+needs the kernels of the nine orders $\nu=11/2,9/2,\dots,-5/2$, for modes
+$\mu\le m$. The kernels of negative order are integrals of positive powers of
+the distance function and remain finite as $C_1\to0$. We find numerically that
+the condition number of the contraction stays below about $3\times10^3$ for
+$C_1<0.03$ and $m\le40$. For larger separations it grows, and we use the
+second basis instead.
+
+\subsection{The Fourier basis}
+
+Alternatively we can expand the numerator in a Fourier series of $\psi$,
+$P(u)=\sum_l p_l\cos(l\psi)$ and $\tfrac12\sin\psi\,Q(u)=\sum_l q_l\sin(l\psi)$.
+The series are finite, since $u^j=\sin^{2j}(\psi/2)=\bigl[(1-\cos\psi)/2\bigr]^j$
+has the expansion
+\begin{equation}
+  \label{eq:fourier_u}
+  u^j = 4^{-j}\binom{2j}{j} + 2\sum_{l=1}^{j}(-1)^l\,4^{-j}\binom{2j}{j-l}\cos(l\psi),
+\end{equation}
+and $\sin\psi\cos(l\psi)$ is a combination of $\sin((l\pm1)\psi)$. The
+products $\cos(m\psi)\cos(l\psi)$ and $\sin(m\psi)\sin(l\psi)$ are sums of
+cosines of $(m\pm l)\psi$, which gives
+\begin{equation}
+  \label{eq:fourier_contraction}
+  E_m = \sum_{l\ge0} p_l\,\frac{\Kmn{m+l}{\nu}+\Kmn{|m-l|}{\nu}}{2}, \qquad
+  O_m = \sum_{l\ge1} q_l\,\frac{\Kmn{|m-l|}{\nu}-\Kmn{m+l}{\nu}}{2}.
+\end{equation}
+This basis needs a single order $\nu$ but modes up to $\mu=m+7$.
+
+The coefficients of Eq.~\eqref{eq:fourier_u} alternate in sign. Near the
+particle the kernels vary slowly with $\mu$, on a scale of order
+$1/\sqrt{C_1}$, so the sums in Eq.~\eqref{eq:fourier_contraction} combine
+nearly equal kernels with alternating signs and cancel. We find that the
+condition number of this contraction grows like $10^8\,(0.044/C_1)^5$, which is
+about $10^8$ at $C_1=0.04$ and reaches about $10^{14}$ at
+$C_1=3\times10^{-3}$. For larger separations it is small.
+
+\subsection{Choosing the basis}
+\label{sec:choice}
+
+The two bases are complementary. The $s^2$ basis is well conditioned near the
+particle and the Fourier basis away from it, and we switch between them at
+$C_1=0.03$. A second consideration is the cost and accuracy of the kernels
+themselves (Sec.~\ref{sec:mu}). The kernels of the $s^2$ basis are cheapest
+when a forward recurrence in $\mu$ is accurate up to $\mu=m$. Between
+$C_1=3\times10^{-3}$ and $0.03$ this fails for $m$ above about 20, and there we
+also use the Fourier basis. Its condition number in that range is at most about
+$10^{14}$, which the double-double arithmetic of Sec.~\ref{sec:precision}
+absorbs. Below $C_1=3\times10^{-3}$ the Fourier condition number is larger
+still, and we keep the $s^2$ basis and compute its kernels by the slower
+Miller recurrence when needed. Since all four quantities of
+Eq.~\eqref{eq:general} share $\alpha$ and $\beta$, a single table of kernels
+serves all of them.
+
+\section{Evaluation of the kernels}
+\label{sec:kernels}
+
+\subsection{The zero mode}
+
+For $\mu=0$ and $\nu=\pm1/2$ the kernels are complete elliptic integrals. With
+$t=\psi/2$, the substitution $t\to\pi/2-t$ and
+$\alpha+\beta\cos^2t=(\alpha+\beta)(1-k^2\sin^2t)$ one finds
+\begin{equation}
+  \label{eq:elliptic}
+  \Kmn{0}{1/2} = \frac{4K(k)}{\sqrt{\alpha+\beta}}, \qquad
+  \Kmn{0}{-1/2} = 4\sqrt{\alpha+\beta}\;E(k), \qquad k^2=\frac{\beta}{\alpha+\beta},
+\end{equation}
+where $K$ and $E$ are the complete elliptic integrals of the first and second
+kind. Near the particle $k\to1$, and $K(k)$ diverges like
+$\tfrac12\ln\bigl(16/(1-k^2)\bigr)$. Computing $K$ and $E$ by the
+arithmetic--geometric mean from the complementary parameter
+$1-k^2=\alpha/(\alpha+\beta)$, which is small but known to full relative
+precision, avoids the loss of digits that forming $k^2$ first would cause.
+
+The other orders of the zero mode follow from the three-term relation
+\begin{equation}
+  \label{eq:nu_recurrence}
+  p\,D\,\Kmn{0}{p+1} = (2p-1)\,A_0\,\Kmn{0}{p} - (p-1)\,\Kmn{0}{p-1}, \qquad
+  D = A_0^2-B_0^2 = \alpha(\alpha+\beta),
+\end{equation}
+applied upward from $\nu=1/2$ to $11/2$ and downward from $\nu=-1/2$ to
+$-7/2$. In both directions the kernels are the dominant solution of the
+recurrence, so rounding errors do not grow. The first mode of each order
+follows from the zero modes of two neighbouring orders,
+\begin{equation}
+  \label{eq:K1}
+  \Kmn{1}{\nu} = \frac{A_0\,\Kmn{0}{\nu}-\Kmn{0}{\nu-1}}{B_0},
+\end{equation}
+which is Eq.~\eqref{eq:kernel} with $\cos\psi=(A_0-s^2)/B_0$.
+
+\subsection{The recurrence in \texorpdfstring{$\mu$}{mu}}
+\label{sec:mu}
+
+The kernels of a fixed order satisfy the three-term recurrence
+\begin{equation}
+  \label{eq:mu_recurrence}
+  (\mu+1-\nu)\,\Kmn{\mu+1}{\nu} - 2\mu z\,\Kmn{\mu}{\nu} + (\mu+\nu-1)\,\Kmn{\mu-1}{\nu} = 0,
+  \qquad z=\frac{A_0}{B_0}=1+2C_1 .
+\end{equation}
+For large $\mu$ its two independent solutions behave like $\rho^{\pm\mu}$, up to
+powers of $\mu$, with
+\begin{equation}
+  \label{eq:rho}
+  \rho=z+\sqrt{z^2-1}, \qquad \ln\rho = \mathrm{arcosh}(1+2C_1) = 2\,\mathrm{arsinh}\sqrt{C_1}.
+\end{equation}
+The kernels are the minimal solution, decreasing like $\rho^{-\mu}$. The rate
+$\ln\rho$ equals the distance of the singularities of the integrand from the
+real axis found in Sec.~\ref{sec:direct}, as expected for the Fourier
+coefficients of an analytic periodic function.
+
+Running Eq.~\eqref{eq:mu_recurrence} forward from $\Kmn{0}{\nu}$ and
+$\Kmn{1}{\nu}$ is the cheapest way to obtain the kernels, but any rounding
+error excites the dominant solution, which grows relative to the kernels like
+$\rho^{2\mu}$. Near the particle $\rho\to1$, and the forward recurrence is
+accurate to high $\mu$. Further away, or for large $m$, we predict the error
+at the largest required $\mu$ from a fit to a recurrence run at 32 digits, and
+accept the forward direction when the prediction is small enough.
+
+Otherwise we use Miller's algorithm. Starting from arbitrary values, for
+example zero and one, at a guard order well above the largest required $\mu$,
+we run the recurrence downward. In this direction the minimal solution grows
+and the dominant solution decays, so after a number of steps set by
+$\ln\rho$ the iterates are proportional to the kernels to working precision.
+The overall factor follows from the known value of $\Kmn{0}{\nu}$.
+
+The relations~\eqref{eq:elliptic}--\eqref{eq:mu_recurrence} agree with 30-digit
+quadrature of Eq.~\eqref{eq:kernel} to better than $10^{-24}$ relative for the
+orders and modes we tested.
+
+\section{Precision}
+\label{sec:precision}
+
+\subsection{Rounding in the integration}
+
+The changes of basis, the kernels and the contractions of
+Sec.~\ref{sec:integration} are exact algebra applied to the coefficients of
+Eq.~\eqref{eq:general}. Their rounding errors are multiplied by the condition
+numbers discussed above, which reach $3\times10^3$ in the $s^2$ basis and
+$10^{14}$ in the Fourier basis at the edge of its range. We therefore carry out
+these steps in double-double arithmetic, in which a number is the unevaluated
+sum of two doubles and holds about 106 bits, and round the result to double
+once. The modes are then the integrals of the given coefficients to about
+$10^{-16}$ relative to each mode, and the choice of basis and recurrence only
+affects the run time.
+
+\subsection{Cancellation in the numerator coefficients}
+
+The precision of the coefficients $P_j$ and $Q_j$ is a separate question. Near
+the particle they are the small remainder of products as large as the singular
+terms of Eq.~\eqref{eq:source}. A rounding error in one of these coefficients
+perturbs the numerator by the same polynomial at every azimuth. Unlike the
+rounding of a quadrature node, it does not average out in the integral. A
+relative rounding error $\epsilon$ in the products therefore changes $S_m$ by
+about $\epsilon$ times the azimuthal integral of the singular terms, which grows
+like $1/C_1$ (Sec.~\ref{sec:termwise}), while $S_m$ stays finite. When the
+coefficients are computed in double precision, the source modes have errors
+between about $2\times10^{-15}/C_1$ and $10^{-13}/C_1$ relative to the largest
+mode, which we measured from $C_1=10^{-1}$ to $10^{-10}$.
+
+We therefore compute the coefficients in double-double arithmetic below a
+threshold in $C_1$ and in double precision above it. Double-double coefficients
+reproduce the exact modes of the given particle data to about $10^{-16}$. The
+threshold balances run time against accuracy, and we discuss its value in
+Sec.~\ref{sec:prepare}.
+
+\subsection{Rounding of the particle data}
+
+The particle data are themselves computed and stored in double precision.
+Perturbing each of them by one unit in the last place changes the source modes
+by about $5.6\times10^{-15}/C_1$ relative to the largest mode. This
+contribution is set by the precision of the particle data, and no choice of
+arithmetic in the steps above can reduce it. It is the leading error of the
+method near the particle.
+
+\part{Implementation}
+\label{part:implementation}
+
+\section{Overview}
+\label{sec:overview}
+
+The method is implemented in three layers, which correspond to the stages of
+Part~\ref{part:theory} and run at different frequencies.
+\begin{enumerate}
+  \item \code{effsource\_equatorial\_ctx\_set\_particle}, in
+    \code{kerr\-equatorial\-coeffs\-ctx.c}, computes the particle data of
+    Sec.~\ref{sec:field} once per particle position and stores them in
+    \code{struct effsource\_equatorial\_ctx}. It calls
+    \code{effsource\_equatorial\_ctx\_set\_particle\_dt} and
+    \code{\_dtt}, in \code{kerr\-equatorial\-dtcoeffs\-ctx.c} and
+    \code{kerr\-equatorial\-dttcoeffs\-ctx.c}, for the time derivatives.
+  \item \code{effsource\_equatorial\_ctx\_prepare} computes the coefficients of
+    Sec.~\ref{sec:rational} once per field point and particle position, and
+    stores them in \code{struct effsource\_equatorial\_point}. It is generated
+    code, in \code{kerr\-equatorial\-point\-ctx.c}.
+  \item \code{effsource\_equatorial\_ctx\_analytic\_modes}, in
+    \code{kerr\-equatorial\-mmode.c}, builds the numerators of
+    Eq.~\eqref{eq:general}, computes the kernels and returns the modes
+    $m=0,\dots,m_{\max}$ of any of the four quantities.
+\end{enumerate}
+The pointwise singular field and source are computed by
+\code{effsource\_equatorial\_ctx\_calc} in \code{kerr\-equatorial\-ctx.c}, which
+is the source from which the code generator works. The term-by-term route of
+Sec.~\ref{sec:termwise} is \code{effsource\_equatorial\_ctx\_calc\_m} in the
+same file, with tabulated closed forms for $m\le20$, and Sec.~\ref{sec:old}
+compares it with the method of this note.
+
+In SpECTRE, \code{EccentricOrbit\_detail::m\_modes} calls the second and third
+layers at every grid point and time sample with $m_{\max}=|m|$, and takes the
+complex conjugate for negative $m$.
+
+\section{Code generation}
+\label{sec:codegen}
+
+The script \code{codegen/point\_codegen.py} reads \code{kerr-equatorial-ctx.c}
+and writes \code{effsource\_equatorial\_point.h} and
+\code{kerr\-equatorial\-point\-ctx.c}. It is run from the repository root as
+\begin{verbatim}
+python codegen/point_codegen.py kerr-equatorial-ctx.c \
+    effsource_equatorial_point.h kerr-equatorial-point-ctx.c
+\end{verbatim}
+and performs the steps of Sec.~\ref{sec:rational} symbolically with SymPy.
+\begin{enumerate}
+  \item It parses the body of \code{effsource\_equatorial\_ctx\_calc}, which is
+    straight-line C, and splits it at the comment that introduces the total
+    derivatives. The first part defines $A$ and its partial derivatives.
+  \item It collects each of these 16 polynomials in powers of $\sigma$
+    (\code{dQ} in the code) and $\sin\psi$ (\code{dR}), checks that each is
+    linear in $\sin\psi$, and lays out each of the resulting 28 parts as a
+    Horner polynomial in $u$, with an overall factor $\sigma$ where the powers
+    are odd. These parts are the fields of \code{struct
+    effsource\_equatorial\_point}, with 121 coefficients in total. The suffixes
+    \code{\_R0} and \code{\_R1} of the field names denote $X^{(0)}$ and
+    $X^{(1)}$.
+  \item It executes the whole calc body symbolically, with the trigonometric
+    functions of $\psi$ replaced by $\sigma$ and $\cos(\psi/2)$ and with
+    $\sqrt{s^2}$ replaced by $(s^2)^{-5}$. This substitution maps each power
+    $s^{-(2k+1)}$ of the calc body to $(s^2)^{5-k}=s^{11-(2k+1)}$, so the
+    symbolic source is the numerator $N$ of Eq.~\eqref{eq:numerator}, without
+    division.
+  \item It expands $N$ as a polynomial in $\sigma$, $\cos(\psi/2)$ and $s^2$,
+    keeping the scalar factors unexpanded, substitutes $s^2=\alpha+\beta u$ and
+    $\cos^2(\psi/2)=1-u$, and checks that every remaining monomial has the
+    parity of Eq.~\eqref{eq:PQ}. The result expresses $P_0,\dots,P_7$ and
+    $Q_0,\dots,Q_6$ as sums of an integer times one of the 121 coefficients
+    times one of 65 weights, 547 products in total.
+  \item It writes the coefficient polynomials, the weights after common
+    subexpression elimination, and the products twice: once in double-double
+    arithmetic as \code{effsource\_equatorial\_ctx\_prepare\_dd} and once in
+    double as \code{effsource\_equatorial\_ctx\_prepare\_double}.
+  \item It also writes two pointwise evaluators for tests:
+    \code{effsource\_equatorial\_ctx\_sweep\_calc}, the calc body with every
+    polynomial replaced by its Horner form, and
+    \code{effsource\_equatorial\_ctx\_sweep\_src}, which evaluates
+    Eq.~\eqref{eq:rational} at a given azimuth.
+\end{enumerate}
+The generated files should not be edited by hand. A change to the calc body or
+to the threshold of Sec.~\ref{sec:prepare} is made in the source or in the
+script, followed by a regeneration.
+
+\section{The prepare functions}
+\label{sec:prepare}
+
+The double-double arithmetic is in \code{effsource\_dd.h}. It follows Hida, Li
+and Bailey and uses only IEEE double operations, with fused multiply--add where
+the compiler reports it fast and Dekker's splitting otherwise, so the results
+are the same on every platform.
+
+\code{effsource\_equatorial\_ctx\_prepare\_dd} forms $\delta r$ and
+$\delta\theta$ by exact two-sums, evaluates $\sin\theta$, $\sin2\theta$ and
+$\cos2\theta$ from the double-double sine and cosine of $\theta-\pi/2$, and
+evaluates the 121 coefficients, the 65 weights and the 547 products in
+double-double. It stores the high parts of all coefficients. For $P_j$, $Q_j$,
+$\alpha$ and the nine polynomial parts that the numerators of
+Sec.~\ref{sec:fields} use, it also stores the low parts in the fields ending in
+\code{\_lo}, which the m-mode routine reads.
+\code{effsource\_equatorial\_ctx\_prepare\_double} evaluates the same
+expressions in double and sets the low parts to zero. With double coefficients,
+the coefficient rounding is amplified by the condition number of the
+contraction. This limits the accuracy of small high-$m$ modes relative to
+themselves, to about $10^{-10}$ at $C_1\approx0.05$ and $m=20$, while the
+error relative to the largest mode remains near $10^{-15}$.
+
+\code{effsource\_equatorial\_ctx\_prepare} chooses between the two by the
+threshold \code{EFFSOURCE\_PREPARE\_DD\_C1} $=10^{-3}$, using double-double for
+$C_1<10^{-3}$. With clang at \code{-O2} the double-double version takes about
+$11\,\mu$s per field point and the double version $0.64\,\mu$s. Above the
+threshold the source modes are accurate to about $10^{-10}$ relative to the
+largest mode, with a largest measured error of $6\times10^{-11}$ at
+$C_1=10^{-3}$. On a representative SpECTRE grid near an orbit with $e=0.2$,
+about $20\%$ of the (grid point, time) pairs fall below the threshold,
+compared with $57\%$ for the earlier threshold of $10^{-2}$. In tests over 13
+eccentric orbits with $m\le40$ and $|n|\le50$, the radial modes computed with
+the threshold at $10^{-3}$ differ from those with double-double everywhere by
+at most $4\times10^{-10}$ times the mean modulus of the $m$-modes in their
+trapezoidal sum over time.
+
+\section{The m-mode routine}
+\label{sec:mmode}
+
+\subsection{Interface}
+
+The routine
+\begin{verbatim}
+int effsource_equatorial_ctx_analytic_modes(ctx, point, m_max,
+                                            src, PhiS, dPhiS_dr, dPhiS_dth);
+\end{verbatim}
+writes the modes $m=0,\dots,m_{\max}$ of each quantity whose output pointer is
+not \code{NULL}, with the real and imaginary parts of mode $m$ at indices $2m$
+and $2m+1$, the layout of an array of complex doubles. All outputs share one
+table of kernels, so each output after the first adds only its contraction.
+The routine returns 1 if $m_{\max}+7$ exceeds
+\code{EFFSOURCE\_MMODE\_MAX\_MU} $=256$, which limits the modes to
+$m\le249$, and 2 if $\alpha\le0$, which happens only on the orbit. The
+convention is that of Eq.~\eqref{eq:mode}, $f_m=\int f\,e^{-\ii m\phi}\,\dd\phi$.
+The wrapper \code{effsource\_equatorial\_ctx\_analytic\_src\_modes} returns the
+source modes as separate real and imaginary arrays.
+
+\subsection{Numerators}
+
+The numerators are assembled in double-double from the high and low parts of
+the point structure. \code{src\_numerator} loads $P_j$ and $Q_j$ from it.
+\code{PhiS\_numerator}, \code{dPhiS\_dth\_numerator} and
+\code{dPhiS\_dr\_numerator} implement
+Eqs.~\eqref{eq:PhiS_numerator}--\eqref{eq:dr_numerator} from the fields
+\code{A\_R0}, \code{A\_R1}, \code{dA\_dr\_R0}, \code{dA\_dr\_R1},
+\code{dA\_dth\_R0}, \code{dA\_dth\_R1}, \code{dA\_dQ\_R0}, \code{dA\_dQ\_R1} and
+\code{dA\_dR\_R0}.
+
+\subsection{Kernels}
+
+\code{zero\_mode\_kernels} computes $\Kmn{0}{\nu}$ for
+$\nu=-7/2,\dots,11/2$ from Eqs.~\eqref{eq:elliptic} and
+\eqref{eq:nu_recurrence}, with the arithmetic--geometric mean of
+\code{elliptic\_KE}. \code{kernels\_dd} then fills the table
+$\Kmn{\mu}{\nu}$ for the orders and modes the chosen basis needs. The function
+\code{forward\_is\_accurate} predicts the error of the forward recurrence at
+$\mu_{\max}$ as
+\begin{equation}
+  \label{eq:forward_fit}
+  \log_{10}\varepsilon \approx -30 + \frac{2\mu_{\max}\ln\rho}{\ln10}
+    + \max\bigl(0,\;7.5\log_{10}\mu_{\max}-5.5\bigr),
+\end{equation}
+a fit to a 32-digit recurrence for $\nu=11/2,\dots,-5/2$ and $C_1$ from
+$10^{-3}$ to $0.3$, and accepts the forward direction when this is below
+$10^{-19}$ (\code{FORWARD\_LOG10\_ERROR}). Otherwise the Miller recurrence
+starts 20 orders above the order at which the dominant solution has decayed by
+$10^{-34}$ (\code{MILLER\_LOG10\_START}), and rescales by $2^{-600}$ whenever an
+iterate exceeds $2^{600}$ to avoid overflow. The public function
+\code{effsource\_equatorial\_mmode\_kernels} returns the kernel table rounded
+to double.
+
+\subsection{Basis choice and contractions}
+
+The function \code{modes} selects the $s^2$ basis when $C_1<0.03$
+(\code{EFFSOURCE\_MMODE\_FOURIER\_C1}) and either $C_1<3\times10^{-3}$
+(\code{FOURIER\_MIN\_C1}) or the forward recurrence is accurate up to
+$\mu=m_{\max}$, as described in Sec.~\ref{sec:choice}. In the
+$s^2$ basis it needs the orders from $11/2$ down to $\nu-\deg G$ for each output
+and modes up to $m_{\max}$. In the Fourier basis it needs the order of each
+output and modes up to $m_{\max}+7$. \code{s2\_contraction} performs the
+changes of basis with \code{to\_s2\_basis}, a scaling followed by a Taylor
+shift, for $P$ and $G$, and evaluates Eqs.~\eqref{eq:s2basis} and
+\eqref{eq:odd_s2} with the partial sums $L_m$ updated by their recurrence.
+\code{fourier\_contraction} forms the Fourier coefficients from
+Eq.~\eqref{eq:fourier_u} and applies Eq.~\eqref{eq:fourier_contraction}.
+Finally \code{modes} applies the phase of Eq.~\eqref{eq:phase}, with the angle
+$m\phi_0$ formed as an exact product in double-double and the cosine and sine
+corrected for its low part.
+
+\section{The earlier implementation}
+\label{sec:old}
+
+The term-by-term route of Sec.~\ref{sec:termwise} is implemented in
+\code{effsource\_equatorial\_ctx\_calc\_m}, in \code{kerr\-equatorial\-ctx.c},
+and in \code{effsource\_equatorial\_ctx\_PhiS\_m} for the singular field
+alone. The coefficients $R_j$ and $I_j$ of Eq.~\eqref{eq:A_split} are the
+arrays \code{ReA} and \code{ImA}, which the function evaluates together with
+their first and second derivatives in $t$, $r$ and $\theta$. The polynomials of
+Eq.~\eqref{eq:old_closed} are tabulated in \code{ReEI} and \code{ImEI}, each of
+dimension $21\times2\times5\times27$: the modes $m=0,\dots,20$, the two
+elliptic integrals, the five values of $j$ and the powers of $C_1$ up to 26.
+For $m>20$ the function prints a message and returns without output. By
+default the elliptic integrals come from GSL as functions of $k$. Setting the
+flag \code{ell\_from\_complement} in the particle context selects the
+arithmetic--geometric mean from the complementary parameter instead.
+
+Table~\ref{tab:old} compares \code{effsource\_equatorial\_ctx\_calc\_m} with
+the analytic modes from double-double coefficients, which are accurate to
+about $10^{-14}$ relative to each mode for the given particle data
+(Sec.~\ref{sec:validation}). Both use the same particle data, for a
+particle at $t=0.1\,T_r$ on an orbit with $a=0.9$, $p=10$ and $e=0.2$, and
+field points along one direction in the $(\delta r,\delta\theta)$ plane. The
+differences are therefore the errors of the term-by-term route. The table uses
+the complementary parameter for the elliptic integrals.
+
+\begin{table}[H]
+  \centering
+  \caption{Relative error of each mode of \code{effsource\_equatorial\_ctx\_calc\_m},
+    with \code{ell\_from\_complement} set, against the analytic modes. The last
+    column is the largest source error over $m\le20$ relative to the largest
+    source mode.}
+  \label{tab:old}
+  \begin{tabular}{rrrrrrrr}
+    \toprule
+    & \multicolumn{3}{c}{$\PhiS$} & \multicolumn{3}{c}{$S$} & $S$, largest \\
+    \cmidrule(lr){2-4}\cmidrule(lr){5-7}
+    $C_1$ & $m=0$ & $m=10$ & $m=20$ & $m=0$ & $m=10$ & $m=20$ & mode \\
+    \midrule
+    $1$       & $3\times10^{-16}$ & $7$                 & $10^{15}$           & $2\times10^{-14}$ & $2$                 & $10^{15}$          & $2\times10^{5}$ \\
+    $10^{-1}$ & $3\times10^{-16}$ & $4\times10^{-10}$   & $8\times10^{-4}$    & $3\times10^{-13}$ & $4\times10^{-7}$    & $3\times10^{-2}$   & $10^{-5}$ \\
+    $10^{-2}$ & $3\times10^{-16}$ & $10^{-13}$          & $10^{-11}$          & $3\times10^{-13}$ & $9\times10^{-10}$   & $2\times10^{-7}$   & $10^{-9}$ \\
+    $10^{-4}$ & $4\times10^{-16}$ & $2\times10^{-15}$   & $6\times10^{-15}$   & $4\times10^{-9}$  & $8\times10^{-7}$    & $10^{-6}$          & $4\times10^{-9}$ \\
+    $10^{-6}$ & $3\times10^{-16}$ & $10^{-16}$          & $2\times10^{-16}$   & $2\times10^{-7}$  & $2\times10^{-5}$    & $8\times10^{-4}$   & $4\times10^{-7}$ \\
+    $10^{-8}$ & $2\times10^{-16}$ & $5\times10^{-16}$   & $10^{-15}$          & $8\times10^{-6}$  & $10^{-2}$           & $3\times10^{-2}$   & $10^{-4}$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The three failures of Sec.~\ref{sec:termwise} appear in separate regions of
+the table. At $C_1=1$ and $10^{-1}$ the closed forms of the high modes cancel,
+and the singular field is already wrong at $m=10$ for $C_1=1$, with the source
+errors following the singular field. For small $C_1$ the modes of $\PhiS$ are
+accurate to $10^{-15}$, but the source errors grow like $1/C_1$, and the
+largest source error reaches $10^{-4}$ of the largest mode at $C_1=10^{-8}$. At
+intermediate separations, $C_1=10^{-2}$, the high source modes are accurate to
+only about $10^{-7}$. With the default elliptic integrals, the modes of $\PhiS$
+also have relative errors of $8\times10^{-14}$ at $C_1=10^{-4}$,
+$10^{-11}$ at $10^{-6}$ and $2\times10^{-10}$ at $10^{-8}$, while the source
+errors are of the same size as in the table.
+
+For comparison, the analytic modes with the default threshold of
+Sec.~\ref{sec:prepare} have source errors below about $6\times10^{-11}$ of the
+largest mode for $C_1\ge10^{-3}$ and of order $10^{-16}$ below, for the same
+particle data.
+
+Table~\ref{tab:old_fields} adds the first derivatives of the singular field,
+which enter a solver as jump data on the boundary of the region where the
+effective source is used. In the SpECTRE configuration of this orbit, with that
+region at $4<r<20$ and $|\cos\theta|<0.5$, $C_1$ on the boundary ranges from
+$0.058$, on the polar edges at the radii of the orbit, to $0.59$, on the outer
+radial edge with the particle at periapsis.
+
+\begin{table}[H]
+  \centering
+  \caption{Relative error of each mode of \code{effsource\_equatorial\_ctx\_calc\_m},
+    with \code{ell\_from\_complement} set, against the analytic modes, for the
+    singular field, its first derivatives and the source.}
+  \label{tab:old_fields}
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{rrrrrrrrr}
+    \toprule
+    & \multicolumn{2}{c}{$\PhiS$} & \multicolumn{2}{c}{$\partial_r\PhiS$}
+    & \multicolumn{2}{c}{$\partial_\theta\PhiS$} & \multicolumn{2}{c}{$S$} \\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+    $C_1$ & $m=2$ & $m=10$ & $m=2$ & $m=10$ & $m=2$ & $m=10$ & $m=0$ & $m=10$ \\
+    \midrule
+    $0.7$     & $1\times10^{-13}$ & $0.1$               & $1\times10^{-12}$ & $5$                 & $7\times10^{-13}$ & $0.06$              & $8\times10^{-14}$ & $0.07$ \\
+    $0.3$     & $1\times10^{-14}$ & $6\times10^{-6}$    & $9\times10^{-14}$ & $2\times10^{-5}$    & $1\times10^{-13}$ & $9\times10^{-6}$    & $6\times10^{-13}$ & $1\times10^{-4}$ \\
+    $0.05$    & $2\times10^{-15}$ & $8\times10^{-11}$   & $6\times10^{-15}$ & $8\times10^{-11}$   & $7\times10^{-15}$ & $1\times10^{-10}$   & $9\times10^{-13}$ & $4\times10^{-9}$ \\
+    $10^{-2}$ & $1\times10^{-15}$ & $1\times10^{-13}$   & $1\times10^{-14}$ & $3\times10^{-14}$   & $5\times10^{-15}$ & $8\times10^{-14}$   & $3\times10^{-13}$ & $9\times10^{-10}$ \\
+    $10^{-4}$ & $1\times10^{-15}$ & $2\times10^{-15}$   & $3\times10^{-15}$ & $6\times10^{-15}$   & $8\times10^{-15}$ & $1\times10^{-14}$   & $4\times10^{-9}$  & $8\times10^{-7}$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The first derivatives behave like the singular field itself. Differentiating
+after the projection leaves them accurate to about $10^{-14}$ for small $C_1$,
+and they degrade at large $C_1$ and high $m$ together with the closed forms of
+$\PhiS$. At $m=10$ and $C_1=0.7$, close to the largest value on the boundary
+above, the closed-form $\partial_r\PhiS$ is wrong by a factor of five. At
+$m\le2$ the two routes agree to $10^{-12}$ or better at every separation in the
+table. Only the source degrades as $C_1$ decreases, already at $m=0$.
+
+\section{Validation and run time}
+\label{sec:validation}
+
+The program \code{test/mmode-check.c} makes four comparisons, grouped by
+decade of $C_1$ from $10^{-9}$ to $10^{-1}$, and exits with an error if any of
+them fails.
+\begin{enumerate}
+  \item The kernels for $\nu=11/2,\dots,-5/2$ and $\mu\le40$ agree with a
+    long-double trapezoidal rule to $1.2\times10^{-15}$ of $\Kmn{0}{\nu}$, for
+    $C_1$ from $10^{-8}$ to $10^{3}$.
+  \item The source modes for $m\le20$ from the double-double coefficients agree
+    with a long-double trapezoidal rule applied to Eq.~\eqref{eq:rational} with
+    the same coefficients to $7.6\times10^{-15}$ relative to each mode, up to the
+    rounding of the reference. This comparison tests the kernels and
+    contractions in isolation.
+  \item The source modes from the hybrid coefficients are compared with the
+    trapezoidal rule applied to a long-double evaluation of the calc body, for
+    $C_1$ from $10^{-5}$ to $10^{-1}$ where the reference grid is small enough
+    to use. They agree to $2.4\times10^{-11}$ of the largest mode for
+    $10^{-3}\le C_1<10^{-2}$, just above the threshold, and to
+    $1.2\times10^{-12}$ or better in the other decades.
+  \item The modes of $\PhiS$, $\partial_r\PhiS$ and $\partial_\theta\PhiS$
+    agree with quadrature of the long-double chain-rule formulas from the same
+    coefficients to $8.9\times10^{-14}$ relative to each mode, and with the
+    long-double calc body to $2.3\times10^{-15}$ of the largest mode.
+\end{enumerate}
+With \code{--dump}, \code{mmode-check} also writes its cases for
+\code{test/mmode\_exact\_check.py}, which recomputes each mode with mpmath from
+a hypergeometric closed form of the kernels. The program
+\code{test/point-check.c} grades \code{sweep\_calc} and \code{sweep\_src}
+against the long-double calc body, both pointwise and for the source modes. In
+SpECTRE, the unit test of \code{EccentricOrbit} compares the four outputs with
+a trapezoidal rule at 12 field points, using \code{sweep\_src} for the source
+and the calc body for the singular field, with tolerances that depend on which
+prepare function applies.
+
+Table~\ref{tab:timing} lists the run time of the m-mode routine on one core
+with clang at \code{-O2}, excluding the prepare function. Including a prepare
+call, the source mode $m=2$ takes about $2.3\,\mu$s per field point above the
+threshold and about $13\,\mu$s below it.
+
+\begin{table}[H]
+  \centering
+  \caption{Run time of \code{effsource\_equatorial\_ctx\_analytic\_modes} for
+    modes $0$ to $m$ at $C_1\le10^{-2}$, excluding the prepare function.}
+  \label{tab:timing}
+  \begin{tabular}{rrr}
+    \toprule
+    $m$ & source only ($\mu$s) & all four outputs ($\mu$s) \\
+    \midrule
+    0  & 1.3  & 2.9  \\
+    2  & 1.7  & 3.8  \\
+    10 & 4.2  & 8.3  \\
+    20 & 7.2  & 13.9 \\
+    40 & 13.3 & 25.2 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Implementation map}
+\label{sec:map}
+
+Table~\ref{tab:map} lists where each step of Part~\ref{part:theory} is
+implemented.
+
+\begin{table}[H]
+  \centering
+  \caption{Where each step is implemented.}
+  \label{tab:map}
+  \begin{tabular}{>{\raggedright\arraybackslash}p{0.42\textwidth}>{\raggedright\arraybackslash}p{0.5\textwidth}}
+    \toprule
+    Step & Implementation \\
+    \midrule
+    Particle data, Sec.~\ref{sec:field}
+      & \code{effsource\_equatorial\_ctx\_set\_particle} and its \code{\_dt} and
+        \code{\_dtt} companions \\
+    Singular field, derivatives and source, Eqs.~\eqref{eq:puncture}--\eqref{eq:source}
+      & \code{effsource\_equatorial\_ctx\_calc} in \code{kerr-equatorial-ctx.c} \\
+    Collection, Eq.~\eqref{eq:collect}, and the numerator, Eqs.~\eqref{eq:numerator}--\eqref{eq:rational}
+      & \code{codegen/point\_codegen.py}, generating \code{kerr-equatorial-point-ctx.c} \\
+    Coefficients at a field point and the precision threshold
+      & \code{effsource\_equatorial\_ctx\_prepare}, \code{\_prepare\_dd} and
+        \code{\_prepare\_double} \\
+    Numerators of $\PhiS$ and its derivatives,
+      Eqs.~\eqref{eq:PhiS_numerator}--\eqref{eq:dr_numerator}
+      & \code{PhiS\_numerator}, \code{dPhiS\_dth\_numerator} and
+        \code{dPhiS\_dr\_numerator} in \code{kerr-equatorial-mmode.c} \\
+    Kernels, Eqs.~\eqref{eq:elliptic}--\eqref{eq:mu_recurrence}
+      & \code{zero\_mode\_kernels}, \code{elliptic\_KE} and \code{kernels\_dd} \\
+    Contractions, Eqs.~\eqref{eq:s2basis}--\eqref{eq:fourier_contraction}
+      & \code{s2\_contraction} and \code{fourier\_contraction} \\
+    Basis choice and phase, Eq.~\eqref{eq:phase}
+      & \code{modes} and \code{effsource\_equatorial\_ctx\_analytic\_modes} \\
+    Pointwise references for tests
+      & \code{effsource\_equatorial\_ctx\_sweep\_src} and \code{\_sweep\_calc} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\end{document}
