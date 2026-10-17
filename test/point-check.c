@@ -1,8 +1,8 @@
 /*******************************************************************************
- * Check effsource_equatorial_ctx_sweep_calc and effsource_equatorial_ctx_sweep_src
+ * Check effsource_equatorial_ctx_point_calc and effsource_equatorial_ctx_point_src
  * against effsource_equatorial_ctx_calc.
  *
- * The calc function and both sweep routes are graded against a long double copy
+ * The calc function and both point routes are graded against a long double copy
  * of the calc function at
  * the same double inputs, for a set of particle states and field points with
  * C1 = (alpha20 dr^2 + alpha02 dtheta^2) / beta from about 1 down to 1e-10:
@@ -10,16 +10,16 @@
  *      projection, normalised by the largest reference value of that output;
  *   2. the m-modes of src for m = 0..MMAX, normalised by the largest
  *      reference m-mode.
- * The sweep_calc route is graded on all outputs, the sweep_src route on src.
+ * The point_calc route is graded on all outputs, the point_src route on src.
  * Errors are grouped by decade of C1. In each decade the worst and the median
- * error of the sweep must be at most MAX_ERROR_RATIO times those of the calc
- * function, or below ERROR_FLOOR. The sweeps use effsource_equatorial_ctx_sweep_prepare,
+ * error of the point routes must be at most MAX_ERROR_RATIO times those of the calc
+ * function, or below ERROR_FLOOR. The point routes use effsource_equatorial_ctx_prepare,
  * which computes the coefficients in double arithmetic where C1 is large. Those
  * coefficients carry errors of 1e-14 to 1e-11, up to three times those of the
  * calc function, so ERROR_FLOOR is set well above them and far below the
- * accuracy the (m,n)-modes need, and the sweep_src route is allowed
+ * accuracy the (m,n)-modes need, and the point_src route is allowed
  * MAX_SRC_ERROR_RATIO where those coefficients are used. Where C1 is small the
- * coefficients come from double-double arithmetic and the sweep_src errors are
+ * coefficients come from double-double arithmetic and the point_src errors are
  * orders of magnitude below those of the calc function. Errors are compared by decade rather than
  * case by case, because the error of the calc function in a single case can be
  * far below its typical level by chance: recompiling it with fused
@@ -36,7 +36,7 @@
 #include <time.h>
 
 #include "effsource_equatorial.h"
-#include "effsource_equatorial_sweep.h"
+#include "effsource_equatorial_point.h"
 
 #define MMAX 10
 #define NUM_OUTPUTS 16
@@ -97,11 +97,11 @@ static void unpack_long(long double PhiS, const long double *d1, const long doub
   out[15] = src;
 }
 
-static double ratio(double sweep_error, double calc_error)
+static double ratio(double point_error, double calc_error)
 {
-  if (sweep_error <= ERROR_FLOOR)
+  if (point_error <= ERROR_FLOOR)
     return 0.0;
-  return sweep_error / fmax(calc_error, ERROR_FLOOR);
+  return point_error / fmax(calc_error, ERROR_FLOOR);
 }
 
 static int compare_doubles(const void *a, const void *b)
@@ -136,8 +136,8 @@ int main(void)
   const double offsets_r[] = {0.0, 0.01, -0.5, 3.0};
   const double offsets_theta[] = {0.5, 0.1, 1e-2, 1e-3, 1e-4};
 
-  static double pointwise_calc[MAX_CASES], pointwise_sweep[MAX_CASES];
-  static double mode_calc[MAX_CASES], mode_sweep[MAX_CASES];
+  static double pointwise_calc[MAX_CASES], pointwise_point[MAX_CASES];
+  static double mode_calc[MAX_CASES], mode_point[MAX_CASES];
   static double src_calc[MAX_CASES], src_rational[MAX_CASES], mode_rational[MAX_CASES];
   static int case_decade[MAX_CASES];
   int nan_mismatch = 0, cases = 0;
@@ -159,12 +159,12 @@ int main(void)
       const double C1 = (ctx->alpha20 * dr * dr + ctx->alpha02 * dth * dth) / ctx->beta;
       const int n = phi_points(C1);
       const int decade = (int)fmin(NUM_DECADES - 1, fmax(0.0, -floor(log10(C1))));
-      struct effsource_equatorial_sweep sweep;
-      effsource_equatorial_ctx_sweep_prepare(ctx, r, theta, &sweep);
+      struct effsource_equatorial_point point;
+      effsource_equatorial_ctx_prepare(ctx, r, theta, &point);
 
-      double scale[NUM_OUTPUTS] = {0}, error_calc[NUM_OUTPUTS] = {0}, error_sweep[NUM_OUTPUTS] = {0};
+      double scale[NUM_OUTPUTS] = {0}, error_calc[NUM_OUTPUTS] = {0}, error_point[NUM_OUTPUTS] = {0};
       long double complex mode_reference[MMAX + 1] = {0};
-      double complex mode_direct[MMAX + 1] = {0}, mode_swept[MMAX + 1] = {0}, mode_ratio[MMAX + 1] = {0};
+      double complex mode_direct[MMAX + 1] = {0}, mode_from_point[MMAX + 1] = {0}, mode_ratio[MMAX + 1] = {0};
       double src_scale = 0.0, src_error_calc = 0.0, src_error_rational = 0.0;
       for (int k = 0; k < n; k++) {
         const double phi = 2.0 * M_PI * k / n;
@@ -173,12 +173,12 @@ int main(void)
         double sPhiS, sd1[4], sd2[10], ssrc, b[NUM_OUTPUTS];
         long double lPhiS, ld1[4], ld2[10], lsrc, l[NUM_OUTPUTS];
         effsource_equatorial_ctx_calc(ctx, &x, &PhiS, d1, d2, &src);
-        effsource_equatorial_ctx_sweep_calc(ctx, &sweep, phi, &sPhiS, sd1, sd2, &ssrc);
+        effsource_equatorial_ctx_point_calc(ctx, &point, phi, &sPhiS, sd1, sd2, &ssrc);
         effsource_equatorial_ctx_calc_long_double(ctx, &x, &lPhiS, ld1, ld2, &lsrc);
         unpack(PhiS, d1, d2, src, a);
         unpack(sPhiS, sd1, sd2, ssrc, b);
         unpack_long(lPhiS, ld1, ld2, lsrc, l);
-        const double rsrc = effsource_equatorial_ctx_sweep_src(ctx, &sweep, phi);
+        const double rsrc = effsource_equatorial_ctx_point_src(ctx, &point, phi);
         src_scale = fmax(src_scale, fabsl(lsrc));
         src_error_calc = fmax(src_error_calc, fabsl(src - lsrc));
         src_error_rational = fmax(src_error_rational, fabsl(rsrc - lsrc));
@@ -189,37 +189,37 @@ int main(void)
           }
           scale[q] = fmax(scale[q], fabsl(l[q]));
           error_calc[q] = fmax(error_calc[q], fabsl(a[q] - l[q]));
-          error_sweep[q] = fmax(error_sweep[q], fabsl(b[q] - l[q]));
+          error_point[q] = fmax(error_point[q], fabsl(b[q] - l[q]));
         }
         for (int m = 0; m <= MMAX; m++) {
           const double complex phase = cexp(-I * m * phi);
           mode_reference[m] += lsrc * phase;
           mode_direct[m] += src * phase;
-          mode_swept[m] += ssrc * phase;
+          mode_from_point[m] += ssrc * phase;
           mode_ratio[m] += rsrc * phase;
         }
       }
 
-      double case_calc = 0.0, case_sweep = 0.0;
+      double case_calc = 0.0, case_point = 0.0;
       for (int q = 0; q < NUM_OUTPUTS; q++) {
         if (scale[q] == 0.0)
           continue;
         case_calc = fmax(case_calc, error_calc[q] / scale[q]);
-        case_sweep = fmax(case_sweep, error_sweep[q] / scale[q]);
+        case_point = fmax(case_point, error_point[q] / scale[q]);
       }
 
-      double mode_scale = 0.0, mode_error_calc = 0.0, mode_error_sweep = 0.0, mode_error_rational = 0.0;
+      double mode_scale = 0.0, mode_error_calc = 0.0, mode_error_point = 0.0, mode_error_rational = 0.0;
       for (int m = 0; m <= MMAX; m++) {
         mode_scale = fmax(mode_scale, cabsl(mode_reference[m]));
         mode_error_calc = fmax(mode_error_calc, cabsl(mode_direct[m] - mode_reference[m]));
-        mode_error_sweep = fmax(mode_error_sweep, cabsl(mode_swept[m] - mode_reference[m]));
+        mode_error_point = fmax(mode_error_point, cabsl(mode_from_point[m] - mode_reference[m]));
         mode_error_rational = fmax(mode_error_rational, cabsl(mode_ratio[m] - mode_reference[m]));
       }
       case_decade[cases] = decade;
       pointwise_calc[cases] = case_calc;
-      pointwise_sweep[cases] = case_sweep;
+      pointwise_point[cases] = case_point;
       mode_calc[cases] = mode_error_calc / mode_scale;
-      mode_sweep[cases] = mode_error_sweep / mode_scale;
+      mode_point[cases] = mode_error_point / mode_scale;
       mode_rational[cases] = mode_error_rational / mode_scale;
       src_calc[cases] = src_error_calc / src_scale;
       src_rational[cases] = src_error_rational / src_scale;
@@ -235,9 +235,9 @@ int main(void)
   for (int decade = 0; decade < NUM_DECADES; decade++) {
     double pcw, pcm, psw, psm, mcw, mcm, msw, msm;
     decade_stats(pointwise_calc, case_decade, cases, decade, &pcw, &pcm);
-    decade_stats(pointwise_sweep, case_decade, cases, decade, &psw, &psm);
+    decade_stats(pointwise_point, case_decade, cases, decade, &psw, &psm);
     decade_stats(mode_calc, case_decade, cases, decade, &mcw, &mcm);
-    decade_stats(mode_sweep, case_decade, cases, decade, &msw, &msm);
+    decade_stats(mode_point, case_decade, cases, decade, &msw, &msm);
     if (pcw == 0.0)
       continue;
     printf("1e-%-3d | %.2e / %.2e     | %.2e / %.2e     | %.2e / %.2e     | %.2e / %.2e\n", decade,
@@ -288,7 +288,7 @@ int main(void)
     struct coordinate xp = {.r = 10.0, .theta = M_PI_2, .phi = 0.0, .t = 0.0};
     effsource_equatorial_ctx_set_particle(ctx, &xp, E, L, 0.02);
     const int points = 200, n = 1024;
-    double sum_direct = 0.0, sum_sweep = 0.0;
+    double sum_direct = 0.0, sum_point = 0.0;
     double t0 = now();
     for (int j = 0; j < points; j++) {
       struct coordinate x = {.r = 8.0 + 4.0 * j / points, .theta = M_PI_2 - 0.003 - 0.2 * (j % 13) / 13.0,
@@ -301,45 +301,45 @@ int main(void)
       }
     }
     const double t_direct = (now() - t0) / ((double)points * n);
-    struct effsource_equatorial_sweep sweep;
+    struct effsource_equatorial_point point;
     double t_prepare = 0.0;
     t0 = now();
     for (int j = 0; j < points; j++) {
       const double tp = now();
-      effsource_equatorial_ctx_sweep_prepare(ctx, 8.0 + 4.0 * j / points,
-                                             M_PI_2 - 0.003 - 0.2 * (j % 13) / 13.0, &sweep);
+      effsource_equatorial_ctx_prepare(ctx, 8.0 + 4.0 * j / points,
+                                             M_PI_2 - 0.003 - 0.2 * (j % 13) / 13.0, &point);
       t_prepare += now() - tp;
       for (int k = 0; k < n; k++) {
         double PhiS, d1[4], d2[10], src;
-        effsource_equatorial_ctx_sweep_calc(ctx, &sweep, 2.0 * M_PI * k / n, &PhiS, d1, d2, &src);
-        sum_sweep += src;
+        effsource_equatorial_ctx_point_calc(ctx, &point, 2.0 * M_PI * k / n, &PhiS, d1, d2, &src);
+        sum_point += src;
       }
     }
-    const double t_sweep = (now() - t0 - t_prepare) / ((double)points * n);
+    const double t_point = (now() - t0 - t_prepare) / ((double)points * n);
     double sum_rational = 0.0;
     t0 = now();
     for (int j = 0; j < points; j++) {
-      effsource_equatorial_ctx_sweep_prepare(ctx, 8.0 + 4.0 * j / points,
-                                             M_PI_2 - 0.003 - 0.2 * (j % 13) / 13.0, &sweep);
+      effsource_equatorial_ctx_prepare(ctx, 8.0 + 4.0 * j / points,
+                                             M_PI_2 - 0.003 - 0.2 * (j % 13) / 13.0, &point);
       for (int k = 0; k < n; k++)
-        sum_rational += effsource_equatorial_ctx_sweep_src(ctx, &sweep, 2.0 * M_PI * k / n);
+        sum_rational += effsource_equatorial_ctx_point_src(ctx, &point, 2.0 * M_PI * k / n);
     }
     const double t_rational = (now() - t0 - t_prepare) / ((double)points * n);
-    printf("time per evaluation: calc %.1f ns, sweep_calc %.1f ns (%.2fx); prepare %.0f ns per field point\n",
-           1e9 * t_direct, 1e9 * t_sweep, t_direct / t_sweep, 1e9 * t_prepare / points);
-    printf("time per evaluation: sweep_src %.1f ns (%.2fx)\n", 1e9 * t_rational, t_direct / t_rational);
+    printf("time per evaluation: calc %.1f ns, point_calc %.1f ns (%.2fx); prepare %.0f ns per field point\n",
+           1e9 * t_direct, 1e9 * t_point, t_direct / t_point, 1e9 * t_prepare / points);
+    printf("time per evaluation: point_src %.1f ns (%.2fx)\n", 1e9 * t_rational, t_direct / t_rational);
     double t_dd = 0.0, t_double = 0.0;
     t0 = now();
     for (int j = 0; j < points; j++)
-      effsource_equatorial_ctx_sweep_prepare_dd(ctx, 8.0 + 4.0 * j / points, M_PI_2 - 0.003 - 0.2 * (j % 13) / 13.0, &sweep);
+      effsource_equatorial_ctx_prepare_dd(ctx, 8.0 + 4.0 * j / points, M_PI_2 - 0.003 - 0.2 * (j % 13) / 13.0, &point);
     t_dd = (now() - t0) / points;
     t0 = now();
     for (int j = 0; j < points; j++)
-      effsource_equatorial_ctx_sweep_prepare_double(ctx, 8.0 + 4.0 * j / points, M_PI_2 - 0.003 - 0.2 * (j % 13) / 13.0, &sweep);
+      effsource_equatorial_ctx_prepare_double(ctx, 8.0 + 4.0 * j / points, M_PI_2 - 0.003 - 0.2 * (j % 13) / 13.0, &point);
     t_double = (now() - t0) / points;
     printf("time per prepare: double-double %.0f ns, double %.0f ns\n", 1e9 * t_dd, 1e9 * t_double);
-    printf("sum relative difference: sweep_calc %.2e, sweep_src %.2e\n",
-           fabs(sum_direct - sum_sweep) / fabs(sum_direct), fabs(sum_direct - sum_rational) / fabs(sum_direct));
+    printf("sum relative difference: point_calc %.2e, point_src %.2e\n",
+           fabs(sum_direct - sum_point) / fabs(sum_direct), fabs(sum_direct - sum_rational) / fabs(sum_direct));
     effsource_equatorial_free(ctx);
   }
   return failed;

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Double-double arithmetic for the sweep prepare functions.
+ * Double-double arithmetic for the prepare functions of effsource_equatorial_point.h.
  *
  * A value is the unevaluated sum hi + lo of two doubles with |lo| <= ulp(hi)/2,
  * which carries about 106 bits. Only IEEE double operations are used, so the
@@ -97,6 +97,26 @@ static inline effsource_dd dd_div(effsource_dd a, effsource_dd b)
   r = dd_sub(r, dd_mul_d(b, q2));
   const double q3 = r.hi / b.hi;
   return dd_add(dd_quick_two_sum(q1, q2), dd_d(q3));
+}
+
+static inline effsource_dd dd_div_d(effsource_dd a, double b)
+{
+  const double q1 = a.hi / b;
+  const effsource_dd p = dd_two_prod(q1, b);
+  effsource_dd s = dd_two_sum(a.hi, -p.hi);
+  s.lo -= p.lo;
+  s.lo += a.lo;
+  const double q2 = (s.hi + s.lo) / b;
+  return dd_quick_two_sum(q1, q2);
+}
+
+/* Square root of a > 0 by one Newton step from the double square root. */
+static inline effsource_dd dd_sqrt(effsource_dd a)
+{
+  const double x = sqrt(a.hi);
+  const effsource_dd x2 = dd_two_prod(x, x);
+  const double correction = (a.hi - x2.hi - x2.lo + a.lo) / (2.0 * x);
+  return dd_quick_two_sum(x, correction);
 }
 
 /* sin(x) and cos(x) for |x| <= pi/2: halve the argument until |x| < 2^-4, sum

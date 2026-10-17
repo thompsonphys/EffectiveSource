@@ -1,7 +1,7 @@
 test/*.o
 test/kerr-circular
 test/kerr-equatorial
-test/sweep-check
+test/point-check
 test/kerr-equatorial-ctx-ld.c
 *.dat
 .vscode
@@ -12,3 +12,12 @@ __pycache__
 effsource_circular.py
 effsource_equatorial.py
 *.csv
+test/mmode-check
+notes/*.aux
+notes/*.log
+notes/*.out
+notes/*.toc
+notes/*.fls
+notes/*.fdb_latexmk
+notes/*.synctex.gz
+*.pdf
