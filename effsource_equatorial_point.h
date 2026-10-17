@@ -52,8 +52,9 @@ struct effsource_equatorial_point {
 };
 
 /* Separation below which effsource_equatorial_ctx_prepare uses double-double arithmetic, in units of
-   C1 = (alpha20 dr^2 + alpha02 dtheta^2) / beta. */
-#define EFFSOURCE_PREPARE_DD_C1 1e-2
+   C1 = (alpha20 dr^2 + alpha02 dtheta^2) / beta. Above it, the coefficients of
+   effsource_equatorial_ctx_prepare_double give src m-modes accurate to about 1e-10 relative to the largest mode. */
+#define EFFSOURCE_PREPARE_DD_C1 1e-3
 
 /* Compute the coefficients for the field point (r, theta): with effsource_equatorial_ctx_prepare_dd
    if C1 < EFFSOURCE_PREPARE_DD_C1 and with effsource_equatorial_ctx_prepare_double otherwise. */

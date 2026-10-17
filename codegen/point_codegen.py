@@ -21,7 +21,7 @@ POINT_STRUCT = "effsource_equatorial_point"
 PREPARE_NAME = "effsource_equatorial_ctx_prepare"
 PREPARE_DOUBLE_NAME = "effsource_equatorial_ctx_prepare_double"
 PREPARE_DD_NAME = "effsource_equatorial_ctx_prepare_dd"
-DD_THRESHOLD = "1e-2"
+DD_THRESHOLD = "1e-3"
 MMODE_FIELDS = {"A_R0", "A_R1", "dA_dr_R0", "dA_dr_R1", "dA_dth_R0", "dA_dth_R1", "dA_dQ_R0", "dA_dQ_R1",
                 "dA_dR_R0"}
 SWEEP_CALC_NAME = "effsource_equatorial_ctx_sweep_calc"
@@ -627,7 +627,8 @@ struct {POINT_STRUCT} {{
 }};
 
 /* Separation below which {PREPARE_NAME} uses double-double arithmetic, in units of
-   C1 = (alpha20 dr^2 + alpha02 dtheta^2) / beta. */
+   C1 = (alpha20 dr^2 + alpha02 dtheta^2) / beta. Above it, the coefficients of
+   {PREPARE_DOUBLE_NAME} give src m-modes accurate to about 1e-10 relative to the largest mode. */
 #define EFFSOURCE_PREPARE_DD_C1 {DD_THRESHOLD}
 
 /* Compute the coefficients for the field point (r, theta): with {PREPARE_DD_NAME}
