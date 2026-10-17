@@ -1,7 +1,7 @@
 """Generate the per-field-point form of effsource_equatorial_ctx_calc.
 
-The sweep_calc function evaluates the polynomials of the calc body from coefficients in powers
-of sin(dphib/2) and sin(dphib). The sweep_src function evaluates src alone from the exact form
+The point_calc function evaluates the polynomials of the calc body from coefficients in powers
+of sin(dphib/2) and sin(dphib). The point_src function evaluates src alone from the exact form
 s2^(11/2) src = sum_j (P_j + dQ cQ Q_j) dQ^(2j), whose coefficients the prepare function
 computes once per field point and particle context.
 
@@ -24,8 +24,8 @@ PREPARE_DD_NAME = "effsource_equatorial_ctx_prepare_dd"
 DD_THRESHOLD = "1e-3"
 MMODE_FIELDS = {"A_R0", "A_R1", "dA_dr_R0", "dA_dr_R1", "dA_dth_R0", "dA_dth_R1", "dA_dQ_R0", "dA_dQ_R1",
                 "dA_dR_R0"}
-SWEEP_CALC_NAME = "effsource_equatorial_ctx_sweep_calc"
-SWEEP_SRC_NAME = "effsource_equatorial_ctx_sweep_src"
+POINT_CALC_NAME = "effsource_equatorial_ctx_point_calc"
+POINT_SRC_NAME = "effsource_equatorial_ctx_point_src"
 THETA_TRIG = {"sin(theta)": "sinth", "sin(2 * theta)": "sin2th", "cos(2 * theta)": "cos2th"}
 POWER_ALIAS = re.compile(r"^(dr|dtheta|dQ)(\d+)$")
 IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
@@ -518,7 +518,7 @@ def prepare_source(layouts, gens, ctx_scalars, weights, p_terms, q_terms, arithm
     return "\n".join(lines)
 
 
-def sweep_src_body(size_p, size_q):
+def point_src_body(size_p, size_q):
     """Return the C body of the rational src evaluation."""
     def horner(field, size):
         expression = f"point->{field}[{size - 1}]"
@@ -575,8 +575,8 @@ def prune_unused(statements):
             return statements
 
 
-def sweep_calc_body(statements, polynomials, layouts):
-    """Return the C body of the sweep evaluation function."""
+def point_calc_body(statements, polynomials, layouts):
+    """Return the C body of the point evaluation function."""
     rewritten = []
     for statement in statements:
         statement = {key: (list(map(list, value)) if key == "declarators" else value)
@@ -641,7 +641,7 @@ void {PREPARE_NAME}(const struct effsource_equatorial_ctx * ctx, double r, doubl
    of PhiS and of its first derivatives in r, theta, dQ and dR also keep their
    low parts in the fields ending in _lo, which only the analytic m-modes use. The src coefficients cancel strongly near the particle and a
    coefficient error repeats identically at every azimuth, so double precision
-   loses digits there. With this function the src of {SWEEP_SRC_NAME} is
+   loses digits there. With this function the src of {POINT_SRC_NAME} is
    correct to about 1e-15 relative to its largest value over the azimuths. */
 void {PREPARE_DD_NAME}(const struct effsource_equatorial_ctx * ctx, double r, double theta,
   struct {POINT_STRUCT} * point);
@@ -653,14 +653,14 @@ void {PREPARE_DOUBLE_NAME}(const struct effsource_equatorial_ctx * ctx, double r
   struct {POINT_STRUCT} * point);
 
 /* Same outputs as {CALC_NAME} at the field point (point->r, point->theta, phi_field). */
-void {SWEEP_CALC_NAME}(const struct effsource_equatorial_ctx * ctx,
+void {POINT_CALC_NAME}(const struct effsource_equatorial_ctx * ctx,
   const struct {POINT_STRUCT} * point, double phi_field,
   double * PhiS, double * dPhiS_dx, double * d2PhiS_dx2, double * src);
 
 /* The src output of {CALC_NAME} at (point->r, point->theta, phi_field), from
    s2^(11/2) src = sum_j (src_P[j] + dQ cQ src_Q[j]) dQ^(2j), with
    dQ = sin(dphib/2), cQ = cos(dphib/2) and s2 = src_alpha + beta dQ^2. */
-double {SWEEP_SRC_NAME}(const struct effsource_equatorial_ctx * ctx,
+double {POINT_SRC_NAME}(const struct effsource_equatorial_ctx * ctx,
   const struct {POINT_STRUCT} * point, double phi_field);
 
 #endif /* EFFSOURCE_EQUATORIAL_POINT_H */
@@ -699,14 +699,14 @@ void {PREPARE_NAME}(const struct effsource_equatorial_ctx *ctx, double r, double
     {PREPARE_DOUBLE_NAME}(ctx, r, theta, point);
 }}
 
-void {SWEEP_CALC_NAME}(const struct effsource_equatorial_ctx *ctx,
+void {POINT_CALC_NAME}(const struct effsource_equatorial_ctx *ctx,
                        const struct {POINT_STRUCT} *point, double phi_field,
                        double *PhiS, double *dPhiS_dx, double *d2PhiS_dx2, double *src)
 {{
 {calc_body}
 }}
 
-double {SWEEP_SRC_NAME}(const struct effsource_equatorial_ctx *ctx,
+double {POINT_SRC_NAME}(const struct effsource_equatorial_ctx *ctx,
                         const struct {POINT_STRUCT} *point, double phi_field)
 {{
 {src_body}
@@ -738,8 +738,8 @@ def main():
                                   "double-double")
     prepare_double_body = prepare_source(layouts, gens, ctx_scalars, weights, p_terms, q_terms,
                                          "double")
-    calc_body = sweep_calc_body(head + tail, polynomials, layouts)
-    src_body = sweep_src_body(len(p_terms), len(q_terms))
+    calc_body = point_calc_body(head + tail, polynomials, layouts)
+    src_body = point_src_body(len(p_terms), len(q_terms))
     header_name = header_path.rsplit("/", 1)[-1]
     with open(header_path, "w") as stream:
         stream.write(header_text(layouts, len(p_terms), len(q_terms)))

@@ -66,7 +66,7 @@ void effsource_equatorial_ctx_prepare(const struct effsource_equatorial_ctx * ct
    of PhiS and of its first derivatives in r, theta, dQ and dR also keep their
    low parts in the fields ending in _lo, which only the analytic m-modes use. The src coefficients cancel strongly near the particle and a
    coefficient error repeats identically at every azimuth, so double precision
-   loses digits there. With this function the src of effsource_equatorial_ctx_sweep_src is
+   loses digits there. With this function the src of effsource_equatorial_ctx_point_src is
    correct to about 1e-15 relative to its largest value over the azimuths. */
 void effsource_equatorial_ctx_prepare_dd(const struct effsource_equatorial_ctx * ctx, double r, double theta,
   struct effsource_equatorial_point * point);
@@ -78,14 +78,14 @@ void effsource_equatorial_ctx_prepare_double(const struct effsource_equatorial_c
   struct effsource_equatorial_point * point);
 
 /* Same outputs as effsource_equatorial_ctx_calc at the field point (point->r, point->theta, phi_field). */
-void effsource_equatorial_ctx_sweep_calc(const struct effsource_equatorial_ctx * ctx,
+void effsource_equatorial_ctx_point_calc(const struct effsource_equatorial_ctx * ctx,
   const struct effsource_equatorial_point * point, double phi_field,
   double * PhiS, double * dPhiS_dx, double * d2PhiS_dx2, double * src);
 
 /* The src output of effsource_equatorial_ctx_calc at (point->r, point->theta, phi_field), from
    s2^(11/2) src = sum_j (src_P[j] + dQ cQ src_Q[j]) dQ^(2j), with
    dQ = sin(dphib/2), cQ = cos(dphib/2) and s2 = src_alpha + beta dQ^2. */
-double effsource_equatorial_ctx_sweep_src(const struct effsource_equatorial_ctx * ctx,
+double effsource_equatorial_ctx_point_src(const struct effsource_equatorial_ctx * ctx,
   const struct effsource_equatorial_point * point, double phi_field);
 
 #endif /* EFFSOURCE_EQUATORIAL_POINT_H */

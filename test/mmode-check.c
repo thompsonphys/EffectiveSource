@@ -8,7 +8,7 @@
  *      reference loses relative accuracy where K_mu is far below K_0.
  *   2. The analytic m-modes from effsource_equatorial_ctx_prepare_dd are
  *      compared with the trapezoid rule applied to the src of
- *      effsource_equatorial_ctx_sweep_src with the same coefficients, on a grid
+ *      effsource_equatorial_ctx_point_src with the same coefficients, on a grid
  *      fine enough that aliasing is below 1e-20. The trapezoid rule evaluates
  *      the rational form in long double on nodes of dphib in (-pi, pi], so that
  *      the distance to the peak at dphib = 0 is exact. Both routes integrate the
@@ -22,7 +22,7 @@
  *      writes the coefficients and analytic m-modes of every case for
  *      mmode_exact_check.py, which checks each mode against mpmath.
  *   3. The analytic m-modes from the hybrid effsource_equatorial_ctx_prepare
- *      and the numerical m-modes of the hybrid sweep_src route are compared with
+ *      and the numerical m-modes of the hybrid point_src route are compared with
  *      the trapezoid rule applied to the long double calc function, where that
  *      grid has at most 2^15 points. The error is normalised by the largest
  *      reference m-mode, as in point-check.
@@ -30,7 +30,7 @@
  *      effsource_equatorial_ctx_analytic_modes are checked twice. First, those from
  *      effsource_equatorial_ctx_prepare_dd are compared mode by mode with
  *      the trapezoid rule applied, on the long double nodes of check 2, to the
- *      chain-rule formulas of effsource_equatorial_ctx_sweep_calc evaluated in
+ *      chain-rule formulas of effsource_equatorial_ctx_point_calc evaluated in
  *      long double from the same coefficients. The error of mode m is
  *      normalised by |f_m| + 1e-19 I / MAX_FIELD_MODE_ERROR with
  *      I = int |f| dphi. This checks the u-polynomial numerators and the
@@ -162,7 +162,7 @@ static double kernel_error(double alpha, double beta)
   return worst;
 }
 
-/* Numerical m-modes of the rational form of sweep_src with the double-double
+/* Numerical m-modes of the rational form of point_src with the double-double
    coefficients, evaluated in long double on nodes of psi = dphib in (-pi, pi],
    and the bound I on its rounding. */
 static double rational_modes(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
@@ -205,7 +205,7 @@ static double rational_modes(const struct effsource_equatorial_ctx *ctx, const s
   return (double)(absolute * 2.0L * pi_long / n);
 }
 
-/* Numerical m-modes of sweep_src on n points, summed in long double, and int |src| dphi. */
+/* Numerical m-modes of point_src on n points, summed in long double, and int |src| dphi. */
 static double numerical_modes(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
                               int n, long double complex *modes)
 {
@@ -214,7 +214,7 @@ static double numerical_modes(const struct effsource_equatorial_ctx *ctx, const 
     modes[m] = 0.0L;
   for (int k = 0; k < n; k++) {
     const double phi = 2.0 * M_PI * k / n;
-    const long double src = effsource_equatorial_ctx_sweep_src(ctx, point, phi);
+    const long double src = effsource_equatorial_ctx_point_src(ctx, point, phi);
     const long double complex step = cexpl(-I * (long double)phi);
     long double complex phase = 1.0L;
     absolute += fabsl(src);
@@ -283,7 +283,7 @@ static void field_reference_modes(const struct effsource_equatorial_ctx *ctx, do
 }
 
 /* Numerical m-modes of PhiS, dPhiS/dr and dPhiS/dtheta from the chain-rule formulas of
-   sweep_calc with the double-double coefficients, evaluated in long double on nodes of
+   point_calc with the double-double coefficients, evaluated in long double on nodes of
    psi = dphib in (-pi, pi], and int |f| dphi of each. */
 static void field_rational_modes(const struct effsource_equatorial_ctx *ctx, const struct effsource_equatorial_point *point,
                                  int n, long double complex modes[NUM_FIELDS][MMAX + 1], double *absolute)
@@ -362,7 +362,7 @@ static double numerical_time(const struct effsource_equatorial_ctx *ctx, const s
   const double start = now();
   for (int repeat = 0; repeat < repeats; repeat++) {
     for (int k = 0; k < n; k++) {
-      const double src = effsource_equatorial_ctx_sweep_src(ctx, point, 2.0 * M_PI * k / n);
+      const double src = effsource_equatorial_ctx_point_src(ctx, point, 2.0 * M_PI * k / n);
       double complex phase = 1.0;
       for (int m = 0; m <= MMAX; m++) {
         sink[m] += src * phase;

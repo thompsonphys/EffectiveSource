@@ -2408,7 +2408,7 @@ void effsource_equatorial_ctx_prepare(const struct effsource_equatorial_ctx *ctx
     effsource_equatorial_ctx_prepare_double(ctx, r, theta, point);
 }
 
-void effsource_equatorial_ctx_sweep_calc(const struct effsource_equatorial_ctx *ctx,
+void effsource_equatorial_ctx_point_calc(const struct effsource_equatorial_ctx *ctx,
                        const struct effsource_equatorial_point *point, double phi_field,
                        double *PhiS, double *dPhiS_dx, double *d2PhiS_dx2, double *src)
 {
@@ -2556,7 +2556,7 @@ void effsource_equatorial_ctx_sweep_calc(const struct effsource_equatorial_ctx *
   d2PhiS_dx2[9] = d2PhiS_dph2;
 }
 
-double effsource_equatorial_ctx_sweep_src(const struct effsource_equatorial_ctx *ctx,
+double effsource_equatorial_ctx_point_src(const struct effsource_equatorial_ctx *ctx,
                         const struct effsource_equatorial_point *point, double phi_field)
 {
   const double dr = point->r - ctx->xp.r;

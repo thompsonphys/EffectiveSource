@@ -3,7 +3,7 @@
  * the coefficients of effsource_equatorial_ctx_prepare.
  *
  * With dQ = sin(dphib/2), cQ = cos(dphib/2), u = dQ^2, psi = dphib and
- * s^2 = alpha + beta u, every output of effsource_equatorial_ctx_sweep_calc
+ * s^2 = alpha + beta u, every output of effsource_equatorial_ctx_point_calc
  * that the m-modes need has the form
  *
  *   f = [P(u) + dQ cQ Q(u)] / s^(2 nu)
@@ -63,7 +63,7 @@
    1 if num_nu or mu_max is out of range, or 2 unless alpha > 0 and beta > 0. */
 int effsource_equatorial_mmode_kernels(double alpha, double beta, int num_nu, int mu_max, double *K);
 
-/* The m-modes of src, PhiS, dPhiS/dr and dPhiS/dtheta of effsource_equatorial_ctx_sweep_calc
+/* The m-modes of src, PhiS, dPhiS/dr and dPhiS/dtheta of effsource_equatorial_ctx_point_calc
    for m = 0..m_max, where the derivatives are taken at fixed t, theta and phi. Each output that
    is not NULL receives the real and imaginary parts of mode m at indices 2m and 2m + 1, the
    layout of an array of complex double. All outputs share one table of kernels, so each output
@@ -73,7 +73,7 @@ int effsource_equatorial_ctx_analytic_modes(const struct effsource_equatorial_ct
   const struct effsource_equatorial_point *point, int m_max, double *src, double *PhiS,
   double *dPhiS_dr, double *dPhiS_dth);
 
-/* The m-modes S_m = re[m] + i im[m] of the src of effsource_equatorial_ctx_sweep_src
+/* The m-modes S_m = re[m] + i im[m] of the src of effsource_equatorial_ctx_point_src
    for m = 0..m_max, with the return values of effsource_equatorial_ctx_analytic_modes. */
 int effsource_equatorial_ctx_analytic_src_modes(const struct effsource_equatorial_ctx *ctx,
   const struct effsource_equatorial_point *point, int m_max, double *re, double *im);

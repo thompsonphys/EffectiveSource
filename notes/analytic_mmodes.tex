@@ -788,9 +788,9 @@ and performs the steps of Sec.~\ref{sec:rational} symbolically with SymPy.
     arithmetic as \code{effsource\_equatorial\_ctx\_prepare\_dd} and once in
     double as \code{effsource\_equatorial\_ctx\_prepare\_double}.
   \item It also writes two pointwise evaluators for tests:
-    \code{effsource\_equatorial\_ctx\_sweep\_calc}, the calc body with every
+    \code{effsource\_equatorial\_ctx\_point\_calc}, the calc body with every
     polynomial replaced by its Horner form, and
-    \code{effsource\_equatorial\_ctx\_sweep\_src}, which evaluates
+    \code{effsource\_equatorial\_ctx\_point\_src}, which evaluates
     Eq.~\eqref{eq:rational} at a given azimuth.
 \end{enumerate}
 The generated files should not be edited by hand. A change to the calc body or
@@ -1041,10 +1041,10 @@ them fails.
 With \code{--dump}, \code{mmode-check} also writes its cases for
 \code{test/mmode\_exact\_check.py}, which recomputes each mode with mpmath from
 a hypergeometric closed form of the kernels. The program
-\code{test/point-check.c} grades \code{sweep\_calc} and \code{sweep\_src}
+\code{test/point-check.c} grades \code{point\_calc} and \code{point\_src}
 against the long-double calc body, both pointwise and for the source modes. In
 SpECTRE, the unit test of \code{EccentricOrbit} compares the four outputs with
-a trapezoidal rule at 12 field points, using \code{sweep\_src} for the source
+a trapezoidal rule at 12 field points, using \code{point\_src} for the source
 and the calc body for the singular field, with tolerances that depend on which
 prepare function applies.
 
@@ -1106,7 +1106,7 @@ implemented.
     Basis choice and phase, Eq.~\eqref{eq:phase}
       & \code{modes} and \code{effsource\_equatorial\_ctx\_analytic\_modes} \\
     Pointwise references for tests
-      & \code{effsource\_equatorial\_ctx\_sweep\_src} and \code{\_sweep\_calc} \\
+      & \code{effsource\_equatorial\_ctx\_point\_src} and \code{\_point\_calc} \\
     \bottomrule
   \end{tabular}
 \end{table}

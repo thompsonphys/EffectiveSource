@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Double-double arithmetic for the sweep prepare functions.
+ * Double-double arithmetic for the prepare functions of effsource_equatorial_point.h.
  *
  * A value is the unevaluated sum hi + lo of two doubles with |lo| <= ulp(hi)/2,
  * which carries about 106 bits. Only IEEE double operations are used, so the
